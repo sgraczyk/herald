@@ -86,6 +86,13 @@ func (l *Loop) handleModel(msg hub.InMessage) {
 }
 
 func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
+	// Load history before saving current message to avoid duplication
+	// (buildMessages appends the user message at the end).
+	history, err := l.store.List(msg.ChatID)
+	if err != nil {
+		log.Printf("load history: %v", err)
+	}
+
 	// Save user message.
 	userMsg := provider.Message{
 		Role:      "user",
@@ -94,12 +101,6 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	}
 	if err := l.store.Append(msg.ChatID, userMsg, l.historyLimit); err != nil {
 		log.Printf("save user message: %v", err)
-	}
-
-	// Load history.
-	history, err := l.store.List(msg.ChatID)
-	if err != nil {
-		log.Printf("load history: %v", err)
 	}
 
 	// Build messages and call provider.
