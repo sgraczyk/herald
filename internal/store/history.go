@@ -10,8 +10,8 @@ import (
 )
 
 // Append adds a message to the chat's history and prunes old messages
-// if the count exceeds limit.
-func (d *DB) Append(chatID int64, msg provider.Message, limit int) error {
+// if the count exceeds the configured history limit.
+func (d *DB) Append(chatID int64, msg provider.Message) error {
 	return d.bolt.Update(func(tx *bolt.Tx) error {
 		messages := tx.Bucket(messagesBucket)
 		chatKey := chatBucketKey(chatID)
@@ -36,8 +36,8 @@ func (d *DB) Append(chatID int64, msg provider.Message, limit int) error {
 		}
 
 		// Prune oldest messages if over limit.
-		if limit > 0 {
-			return prune(chat, limit)
+		if d.historyLimit > 0 {
+			return prune(chat, d.historyLimit)
 		}
 		return nil
 	})

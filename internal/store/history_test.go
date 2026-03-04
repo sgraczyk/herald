@@ -10,10 +10,10 @@ import (
 	"github.com/sgraczyk/herald/internal/provider"
 )
 
-func testDB(t *testing.T) *DB {
+func testDB(t *testing.T, historyLimit int) *DB {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "test.db")
-	db, err := Open(path)
+	db, err := Open(path, historyLimit)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -30,12 +30,12 @@ func msg(role, content string) provider.Message {
 }
 
 func TestAppendAndList(t *testing.T) {
-	db := testDB(t)
+	db := testDB(t, 50)
 
-	if err := db.Append(1, msg("user", "hello"), 50); err != nil {
+	if err := db.Append(1, msg("user", "hello")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	if err := db.Append(1, msg("assistant", "hi"), 50); err != nil {
+	if err := db.Append(1, msg("assistant", "hi")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 
@@ -56,7 +56,7 @@ func TestAppendAndList(t *testing.T) {
 }
 
 func TestListEmpty(t *testing.T) {
-	db := testDB(t)
+	db := testDB(t, 50)
 
 	msgs, err := db.List(999)
 	if err != nil {
@@ -68,10 +68,10 @@ func TestListEmpty(t *testing.T) {
 }
 
 func TestCount(t *testing.T) {
-	db := testDB(t)
+	db := testDB(t, 50)
 
 	for i := 0; i < 5; i++ {
-		if err := db.Append(1, msg("user", "msg"), 50); err != nil {
+		if err := db.Append(1, msg("user", "msg")); err != nil {
 			t.Fatalf("append: %v", err)
 		}
 	}
@@ -86,10 +86,10 @@ func TestCount(t *testing.T) {
 }
 
 func TestClear(t *testing.T) {
-	db := testDB(t)
+	db := testDB(t, 50)
 
 	for i := 0; i < 3; i++ {
-		if err := db.Append(1, msg("user", "msg"), 50); err != nil {
+		if err := db.Append(1, msg("user", "msg")); err != nil {
 			t.Fatalf("append: %v", err)
 		}
 	}
@@ -108,7 +108,7 @@ func TestClear(t *testing.T) {
 }
 
 func TestClearNonexistent(t *testing.T) {
-	db := testDB(t)
+	db := testDB(t, 50)
 
 	if err := db.Clear(999); err != nil {
 		t.Fatalf("clear nonexistent: %v", err)
@@ -116,11 +116,11 @@ func TestClearNonexistent(t *testing.T) {
 }
 
 func TestPruning(t *testing.T) {
-	db := testDB(t)
 	limit := 5
+	db := testDB(t, limit)
 
 	for i := 0; i < 10; i++ {
-		if err := db.Append(1, msg("user", fmt.Sprintf("msg-%d", i)), limit); err != nil {
+		if err := db.Append(1, msg("user", fmt.Sprintf("msg-%d", i))); err != nil {
 			t.Fatalf("append: %v", err)
 		}
 	}
@@ -143,13 +143,31 @@ func TestPruning(t *testing.T) {
 	}
 }
 
-func TestSeparateChats(t *testing.T) {
-	db := testDB(t)
+func TestPruningDisabled(t *testing.T) {
+	db := testDB(t, 0)
 
-	if err := db.Append(1, msg("user", "chat1"), 50); err != nil {
+	for i := 0; i < 10; i++ {
+		if err := db.Append(1, msg("user", fmt.Sprintf("msg-%d", i))); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+
+	count, err := db.Count(1)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 10 {
+		t.Fatalf("expected 10 messages with pruning disabled, got %d", count)
+	}
+}
+
+func TestSeparateChats(t *testing.T) {
+	db := testDB(t, 50)
+
+	if err := db.Append(1, msg("user", "chat1")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	if err := db.Append(2, msg("user", "chat2"), 50); err != nil {
+	if err := db.Append(2, msg("user", "chat2")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 
@@ -166,7 +184,7 @@ func TestSeparateChats(t *testing.T) {
 
 func TestOpenCreatesFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "new.db")
-	db, err := Open(path)
+	db, err := Open(path, 50)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
