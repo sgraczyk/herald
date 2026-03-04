@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/sgraczyk/herald/internal/config"
@@ -36,7 +37,10 @@ func newAskCmd() *cobra.Command {
 				{Role: "user", Content: question},
 			}
 
-			response, err := chain.Chat(context.Background(), messages)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
+			response, err := chain.Chat(ctx, messages)
 			if err != nil {
 				return err
 			}
