@@ -35,9 +35,17 @@ func (f *Fallback) Name() string {
 }
 
 func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error) {
+	if len(f.providers) == 0 {
+		return "", fmt.Errorf("no providers configured")
+	}
+
 	var errs []string
 
 	for _, p := range f.providers {
+		if err := ctx.Err(); err != nil {
+			return "", fmt.Errorf("fallback aborted: %w", err)
+		}
+
 		result, err := p.Chat(ctx, messages)
 		if err == nil {
 			f.mu.Lock()
