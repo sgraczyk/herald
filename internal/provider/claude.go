@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -19,10 +20,10 @@ type Claude struct {
 	timeout time.Duration
 }
 
-// NewClaude creates a new Claude CLI provider.
-func NewClaude() *Claude {
+// NewClaude creates a new Claude CLI provider with the given timeout.
+func NewClaude(timeout time.Duration) *Claude {
 	return &Claude{
-		timeout: 30 * time.Second,
+		timeout: timeout,
 	}
 }
 
@@ -32,13 +33,22 @@ func (c *Claude) Chat(ctx context.Context, messages []Message) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	input := buildClaudeInput(messages)
+	systemPrompt, userInput := buildClaudeInput(messages)
 
-	cmd := exec.CommandContext(ctx, "claude", "-p", "--output-format", "json")
-	cmd.Stdin = strings.NewReader(input)
+	args := []string{"-p", "--output-format", "json"}
+	if systemPrompt != "" {
+		args = append(args, "--system-prompt", systemPrompt)
+	}
+
+	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd.Stdin = strings.NewReader(userInput)
 
 	output, err := cmd.Output()
 	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+			return "", fmt.Errorf("execute claude: %w, stderr: %s", err, exitErr.Stderr)
+		}
 		return "", fmt.Errorf("execute claude: %w", err)
 	}
 
@@ -54,22 +64,25 @@ func (c *Claude) Chat(ctx context.Context, messages []Message) (string, error) {
 	return resp.Result, nil
 }
 
-// buildClaudeInput assembles the conversation into a single prompt string.
-// System messages become context, history provides conversation continuity,
-// and the last user message is the actual question.
-func buildClaudeInput(messages []Message) string {
-	var b strings.Builder
-
-	// Collect system messages as context.
+// buildClaudeInput separates messages into a system prompt and user input.
+// System messages are joined into a single system prompt string.
+// Non-system messages become the user input: history as context, last message as the question.
+func buildClaudeInput(messages []Message) (systemPrompt, userInput string) {
+	var system strings.Builder
 	var history []Message
+
 	for _, m := range messages {
 		if m.Role == "system" {
-			b.WriteString(m.Content)
-			b.WriteString("\n\n")
+			if system.Len() > 0 {
+				system.WriteString("\n\n")
+			}
+			system.WriteString(m.Content)
 		} else {
 			history = append(history, m)
 		}
 	}
+
+	var b strings.Builder
 
 	// Add conversation history.
 	if len(history) > 1 {
@@ -86,5 +99,5 @@ func buildClaudeInput(messages []Message) string {
 		b.WriteString(last.Content)
 	}
 
-	return b.String()
+	return system.String(), b.String()
 }
