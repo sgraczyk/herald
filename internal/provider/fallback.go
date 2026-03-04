@@ -54,6 +54,22 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 	return "", fmt.Errorf("all providers failed: %s", strings.Join(errs, "; "))
 }
 
+// SetActive reorders the provider list so the named provider is tried first.
+func (f *Fallback) SetActive(name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for i, p := range f.providers {
+		if strings.EqualFold(p.Name(), name) {
+			// Move selected provider to front.
+			f.providers[0], f.providers[i] = f.providers[i], f.providers[0]
+			f.active = p.Name()
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown provider %q", name)
+}
+
 // Providers returns the list of configured providers.
 func (f *Fallback) Providers() []LLMProvider {
 	return f.providers
