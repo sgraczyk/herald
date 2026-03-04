@@ -1,6 +1,6 @@
 # Herald
 
-Lightweight, self-hosted AI assistant bot for Telegram. Single Go binary, SQLite storage, minimal dependencies. Deployed as an LXC container on Proxmox.
+Lightweight, self-hosted AI assistant bot for Telegram. Single Go binary, bbolt storage, minimal dependencies. Deployed as an LXC container on Proxmox.
 
 Tracking issue: [sgraczyk/homelab#30](https://github.com/sgraczyk/homelab/issues/30)
 
@@ -11,7 +11,7 @@ Tracking issue: [sgraczyk/homelab#30](https://github.com/sgraczyk/homelab/issues
 ```
 Telegram ──write──> Hub.In ──read──> Agent Loop ──call──> Provider (claude -p / Chutes.ai)
                                          │
-                                         ├──read/write──> Store (SQLite)
+                                         ├──read/write──> Store (bbolt)
                                          │
                                          └──write──> Hub.Out ──read──> Telegram
 ```
@@ -34,7 +34,7 @@ The `claude -p` provider executes the Claude CLI in pipe mode with `--output-for
 |---------|---------|-------|
 | `github.com/go-telegram/bot` | Telegram Bot API | 0 transitive deps, Bot API 9.4 |
 | `github.com/spf13/cobra` | CLI framework | ~3 transitive deps |
-| `modernc.org/sqlite` | Pure-Go SQLite | ~10 transitive deps, all pure Go |
+| `go.etcd.io/bbolt` | Embedded key/value store | 0 transitive deps, pure Go |
 
 No CGO. Single static binary. Cross-compiles trivially with `GOOS=linux GOARCH=amd64`.
 
@@ -56,11 +56,8 @@ internal/
     openai.go                # OpenAI-compatible HTTP client (Chutes.ai, Groq, etc.)
     fallback.go              # Try providers in order, return first success
   store/
-    db.go                    # SQLite init (modernc.org/sqlite, pure Go)
-    history.go               # Conversation history per chat
-    memory.go                # Long-term memory (key facts, user preferences)
-  cron/
-    scheduler.go             # Persistent cron jobs (SQLite-backed)
+    db.go                    # bbolt init (go.etcd.io/bbolt, pure Go)
+    history.go               # Conversation history per chat (bucket per chat_id)
 config.json.example
 .env.example
 go.mod
@@ -87,21 +84,23 @@ type Message struct {
 }
 ```
 
-### SQLite Schema
+### bbolt Storage Design
 
-```sql
-CREATE TABLE messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chat_id INTEGER NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
-    content TEXT NOT NULL,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_messages_chat ON messages(chat_id, timestamp);
+```
+herald.db (single file)
+├── messages/              # Top-level bucket
+│   ├── <chat_id>/         # Nested bucket per chat
+│   │   ├── 00000001 → {"role":"user","content":"...","timestamp":"..."}
+│   │   ├── 00000002 → {"role":"assistant","content":"...","timestamp":"..."}
+│   │   └── ...            # Sequential uint64 keys (big-endian, naturally sorted)
+│   └── <chat_id>/         # ... more chats
+└── metadata/              # Stretch: long-term memory, cron state
 ```
 
-Prune to 50 messages per chat via DELETE after INSERT.
+- Keys: big-endian uint64 (auto-increment per bucket) — bbolt's `NextSequence()`
+- Values: JSON-encoded `{role, content, timestamp}`
+- Prune: after insert, iterate from start, delete oldest if count > 50
+- Clear: delete and recreate the chat bucket
 
 ## Deployment
 
@@ -167,7 +166,7 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o herald ./cmd/herald
 
 1. Telegram bot responding to messages via `claude -p`
 2. Fallback to Chutes.ai when Claude CLI fails or is slow
-3. Conversation history in SQLite (50 messages/chat, structured)
+3. Conversation history in bbolt (50 messages/chat, structured)
 4. `/clear` command to reset context
 5. `/model` command to switch between providers
 6. `/status` command showing uptime, provider, message count
