@@ -35,9 +35,14 @@ func (f *Fallback) Name() string {
 }
 
 func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error) {
+	f.mu.RLock()
+	providers := make([]LLMProvider, len(f.providers))
+	copy(providers, f.providers)
+	f.mu.RUnlock()
+
 	var errs []string
 
-	for _, p := range f.providers {
+	for _, p := range providers {
 		result, err := p.Chat(ctx, messages)
 		if err == nil {
 			f.mu.Lock()
@@ -54,7 +59,27 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 	return "", fmt.Errorf("all providers failed: %s", strings.Join(errs, "; "))
 }
 
-// Providers returns the list of configured providers.
+// SetActive reorders the provider list so the named provider is tried first.
+func (f *Fallback) SetActive(name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for i, p := range f.providers {
+		if strings.EqualFold(p.Name(), name) {
+			// Move selected provider to front.
+			f.providers[0], f.providers[i] = f.providers[i], f.providers[0]
+			f.active = p.Name()
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown provider %q", name)
+}
+
+// Providers returns a copy of the configured providers list.
 func (f *Fallback) Providers() []LLMProvider {
-	return f.providers
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	result := make([]LLMProvider, len(f.providers))
+	copy(result, f.providers)
+	return result
 }

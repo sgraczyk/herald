@@ -17,6 +17,7 @@ type Loop struct {
 	provider     provider.LLMProvider
 	store        *store.DB
 	historyLimit int
+	startTime    time.Time
 }
 
 // NewLoop creates a new agent loop.
@@ -26,6 +27,7 @@ func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit int) 
 		provider:     p,
 		store:        s,
 		historyLimit: historyLimit,
+		startTime:    time.Now(),
 	}
 }
 
@@ -68,20 +70,36 @@ func (l *Loop) handleStatus(msg hub.InMessage) {
 	if err != nil {
 		log.Printf("count chat %d: %v", msg.ChatID, err)
 	}
-	text := fmt.Sprintf("Provider: %s\nMessages: %d/%d", l.provider.Name(), count, l.historyLimit)
+	uptime := time.Since(l.startTime).Truncate(time.Second)
+	text := fmt.Sprintf("Provider: %s\nMessages: %d/%d\nUptime: %s", l.provider.Name(), count, l.historyLimit, uptime)
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: text}
 }
 
 func (l *Loop) handleModel(msg hub.InMessage) {
-	text := fmt.Sprintf("Active: %s", l.provider.Name())
+	fb, ok := l.provider.(*provider.Fallback)
 
-	if fb, ok := l.provider.(*provider.Fallback); ok {
+	// Switch provider if an argument was given.
+	if msg.Text != "" {
+		if !ok {
+			l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Provider switching not available."}
+			return
+		}
+		if err := fb.SetActive(msg.Text); err != nil {
+			l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: fmt.Sprintf("Error: %v", err)}
+			return
+		}
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: fmt.Sprintf("Switched to %s.", fb.Name())}
+		return
+	}
+
+	// Show current status.
+	text := fmt.Sprintf("Active: %s", l.provider.Name())
+	if ok {
 		text += "\nAvailable:"
 		for _, p := range fb.Providers() {
 			text += fmt.Sprintf("\n- %s", p.Name())
 		}
 	}
-
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: text}
 }
 
