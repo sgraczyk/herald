@@ -70,24 +70,29 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 
-	in := hub.InMessage{
-		ChatID: chatID,
-		UserID: userID,
-		Text:   text,
-	}
+	cmd, arg := parseCommand(text)
 
-	// Extract command.
-	if strings.HasPrefix(text, "/") {
-		parts := strings.SplitN(text, " ", 2)
-		// Strip @botname suffix from commands like /clear@herald_bot.
-		cmd := strings.SplitN(parts[0], "@", 2)[0]
-		in.Command = cmd
-		if len(parts) > 1 {
-			in.Text = strings.TrimSpace(parts[1])
-		}
+	a.hub.In <- hub.InMessage{
+		ChatID:  chatID,
+		UserID:  userID,
+		Text:    arg,
+		Command: cmd,
 	}
+}
 
-	a.hub.In <- in
+// parseCommand extracts a command and its argument from text.
+// Returns ("", text) for regular messages, or (command, arg) for commands.
+// Strips @botname suffixes from commands like /clear@herald_bot.
+func parseCommand(text string) (cmd, arg string) {
+	if !strings.HasPrefix(text, "/") {
+		return "", text
+	}
+	parts := strings.SplitN(text, " ", 2)
+	cmd = strings.SplitN(parts[0], "@", 2)[0]
+	if len(parts) > 1 {
+		arg = strings.TrimSpace(parts[1])
+	}
+	return cmd, arg
 }
 
 func (a *Adapter) dispatchOut(ctx context.Context) {
