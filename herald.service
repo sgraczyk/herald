@@ -1,0 +1,22 @@
+[Unit]
+Description=Herald — AI assistant bot for Telegram
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/herald --config /etc/herald/config.json
+WorkingDirectory=/var/lib/herald
+EnvironmentFile=/etc/herald/.env
+Restart=always
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/herald
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
