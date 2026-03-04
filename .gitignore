@@ -1,0 +1,22 @@
+# Binary
+/herald
+
+# Secrets
+*.env
+.env
+*.key
+*.pem
+
+# Database
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

@@ -1,0 +1,23 @@
+{
+  "telegram": {
+    "token_env": "TELEGRAM_TOKEN"
+  },
+  "providers": [
+    {
+      "name": "claude",
+      "type": "claude-cli"
+    },
+    {
+      "name": "chutes",
+      "type": "openai",
+      "base_url": "https://api.chutes.ai/v1",
+      "model": "deepseek-ai/DeepSeek-V3-0324",
+      "api_key_env": "CHUTES_API_KEY"
+    }
+  ],
+  "store": {
+    "path": "herald.db"
+  },
+  "history_limit": 50,
+  "allowed_user_ids_env": "ALLOWED_USER_IDS"
+}
