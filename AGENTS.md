@@ -93,7 +93,7 @@ herald.db (single file)
 │   │   ├── 00000001 → {"role":"user","content":"...","timestamp":"..."}
 │   │   ├── 00000002 → {"role":"assistant","content":"...","timestamp":"..."}
 │   │   └── ...            # Sequential uint64 keys (big-endian, naturally sorted)
-│   └── <chat_id>/
+│   └── <chat_id>/         # ... more chats
 └── metadata/              # Stretch: long-term memory, cron state
 ```
 
