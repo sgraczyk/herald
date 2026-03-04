@@ -79,12 +79,16 @@ func (l *Loop) handleModel(msg hub.InMessage) {
 	fb, ok := l.provider.(*provider.Fallback)
 
 	// Switch provider if an argument was given.
-	if ok && msg.Text != "" {
+	if msg.Text != "" {
+		if !ok {
+			l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Provider switching not available."}
+			return
+		}
 		if err := fb.SetActive(msg.Text); err != nil {
 			l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: fmt.Sprintf("Error: %v", err)}
 			return
 		}
-		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: fmt.Sprintf("Switched to %s.", msg.Text)}
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: fmt.Sprintf("Switched to %s.", fb.Name())}
 		return
 	}
 
