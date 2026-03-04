@@ -1,0 +1,29 @@
+package hub
+
+// InMessage represents an incoming message to be processed.
+type InMessage struct {
+	ChatID  int64
+	UserID  int64
+	Text    string
+	Command string // e.g. "/clear", "/model", "/status" (empty for regular messages)
+}
+
+// OutMessage represents an outgoing response to be sent.
+type OutMessage struct {
+	ChatID int64
+	Text   string
+}
+
+// Hub routes messages between the Telegram adapter and the agent loop.
+type Hub struct {
+	In  chan InMessage
+	Out chan OutMessage
+}
+
+// New creates a new Hub with buffered channels.
+func New() *Hub {
+	return &Hub{
+		In:  make(chan InMessage, 64),
+		Out: make(chan OutMessage, 64),
+	}
+}
