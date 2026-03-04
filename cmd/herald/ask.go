@@ -12,13 +12,13 @@ import (
 )
 
 func newAskCmd() *cobra.Command {
-	var configPath string
-
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "ask [question]",
 		Short: "Ask a question directly (bypass Telegram)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			configPath, _ := cmd.Flags().GetString("config")
+
 			cfg, err := config.Load(configPath)
 			if err != nil {
 				return fmt.Errorf("load config: %w", err)
@@ -45,10 +45,6 @@ func newAskCmd() *cobra.Command {
 			return nil
 		},
 	}
-
-	cmd.Flags().StringVarP(&configPath, "config", "c", "config.json", "path to config file")
-
-	return cmd
 }
 
 func buildProviders(cfg *config.Config) []provider.LLMProvider {
