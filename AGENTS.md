@@ -201,9 +201,9 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o herald ./cmd/herald
 Two GitHub Actions workflows in `.github/workflows/`:
 
 **CI** (`ci.yml`) — runs on push/PR to `main`:
-- `go vet ./...`
-- `staticcheck` (via `dominikh/staticcheck-action`)
-- `go test ./...`
+- **lint:** `go vet ./...` + `staticcheck` (via `dominikh/staticcheck-action`)
+- **build:** `go build ./cmd/herald` (verifies compilation with `CGO_ENABLED=0`)
+- **test:** `go test -race ./...` (race detector enabled via `CGO_ENABLED=1`)
 
 **Release** (`release.yml`) — runs on tag push (`v*`):
 - Builds `linux/amd64` static binary with `-trimpath -ldflags="-s -w"`
