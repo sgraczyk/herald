@@ -155,7 +155,7 @@ RAM is 512 MB (not 256 MB) because Claude Code CLI requires Node.js runtime. The
 
 **Language:** English (all code, commits, docs, comments).
 
-**Commits:** Descriptive, imperative mood. Prefix with scope when useful: `telegram: add long polling`, `provider: implement fallback chain`, `store: add history pruning`.
+**Commits:** [Conventional Commits](https://www.conventionalcommits.org/) format, imperative mood. Use `feat`, `fix`, `chore`, `docs`, `refactor`, `test` with optional scope: `feat(telegram): add long polling`, `fix(provider): handle timeout`, `chore(ci): update workflow`. Breaking changes use `feat!:` or `fix!:` (triggers minor version bump pre-1.0).
 
 **Go conventions:**
 - `internal/` packages for all non-main code
@@ -198,24 +198,32 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o herald ./cmd/herald
 
 ## CI/CD
 
-Two GitHub Actions workflows in `.github/workflows/`:
+Three GitHub Actions workflows in `.github/workflows/`:
 
 **CI** (`ci.yml`) — runs on push/PR to `main`:
 - **lint:** `go vet ./...` + `staticcheck` (via `dominikh/staticcheck-action`)
 - **build:** `go build ./cmd/herald` (verifies compilation with `CGO_ENABLED=0`)
 - **test:** `go test -race ./...` (race detector enabled via `CGO_ENABLED=1`)
 
-**Release** (`release.yml`) — runs on tag push (`v*`):
+**Release Please** (`release-please.yml`) — runs on push to `main`:
+- Uses `googleapis/release-please-action@v4` to create/update Release PRs
+- Parses conventional commits to determine version bump and generate CHANGELOG.md
+- On merge of Release PR, creates a GitHub Release with the correct tag
+
+**Release** (`release.yml`) — runs on `release: published` (triggered by release-please):
 - Builds `linux/amd64` static binary with `-trimpath -ldflags="-s -w"`
-- Injects version from git tag via `-X main.version`
-- Creates GitHub Release with the binary attached (auto-generated release notes)
+- Injects version from release tag via `-X main.version`
+- Attaches binary to the GitHub Release created by release-please
 
 ## Release Process
 
-1. Ensure `main` is green (CI passing)
-2. Tag: `git tag v0.x.x && git push origin v0.x.x`
-3. Release workflow builds the binary and creates a GitHub Release automatically
-4. Deploy manually: download binary from the release, copy to LXC, restart service
+Releases are automated via [release-please](https://github.com/googleapis/release-please-action):
+
+1. Use conventional commits on `main` (e.g., `feat(agent): add memory`, `fix(store): handle nil bucket`)
+2. Release-please automatically opens/updates a Release PR with version bump and CHANGELOG.md
+3. Review and merge the Release PR when ready to release
+4. GitHub Release is created automatically, triggering the binary build
+5. Deploy manually: download binary from the release, copy to LXC, restart service
 
 ```bash
 # Example deploy
@@ -223,7 +231,7 @@ scp herald-linux-amd64 root@192.168.0.107:/usr/local/bin/herald
 ssh root@192.168.0.107 systemctl restart herald
 ```
 
-Versioning: [semver](https://semver.org/). Tags must match `v*` pattern.
+Versioning: [semver](https://semver.org/). Managed by release-please based on conventional commits. Config in `release-please-config.json` and `.release-please-manifest.json`.
 
 ## MVP Scope (v0.1.0)
 
