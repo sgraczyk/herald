@@ -2,7 +2,41 @@
 
 Lightweight, self-hosted AI assistant bot for Telegram. Single Go binary, bbolt storage, minimal dependencies. Deployed as an LXC container on Proxmox.
 
-Tracking issue: [sgraczyk/homelab#30](https://github.com/sgraczyk/homelab/issues/30)
+Part of the [sgraczyk/homelab](https://github.com/sgraczyk/homelab) project. Tracking issue: [homelab#30](https://github.com/sgraczyk/homelab/issues/30).
+
+## Workflow
+
+All work **must** follow this process. No exceptions. AI agents must enforce this on every task.
+
+```
+1. Problem Statement     — Understand the problem, gather context
+2. Create GitHub Issue   — `gh issue create` with clear acceptance criteria
+3. Plan Work             — Research codebase, design approach, get user approval
+4. Implement Plan        — Write code on a feature branch
+5. Test Implementation   — `go test ./...`, `go vet ./...`, manual verification
+6. Create PR             — `gh pr create`, link the issue
+7. Review PR             — Check diff, verify acceptance criteria are met
+8. Apply Changes         — Address review feedback if any
+9. Retest                — Run tests again after changes
+10. Merge with Squash   — `gh pr merge --squash`, confirm issue closes
+11. Back to Main        — `git checkout main && git pull`, pick up next task
+```
+
+**Between tasks:** always return to `main`, pull latest, and check `gh issue list` for the next item.
+
+## Task Tracking
+
+All tasks and open work items are tracked as GitHub Issues in this repo. When asked about tasks, remaining work, or what to do next, check `gh issue list`.
+
+## AGENTS.md Maintenance
+
+This file is the source of truth for project conventions. AI agents should periodically validate that it matches reality:
+- Verify repo structure section matches actual files (`find internal/ -name '*.go'`)
+- Verify CI/CD section matches workflow YAML files
+- Verify deployment section matches current infrastructure
+- Flag any drift as a new GitHub Issue
+
+When conventions change (new patterns, new tools, new workflows), update this file as part of the same PR.
 
 ## Architecture
 
@@ -161,6 +195,35 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o herald ./cmd/herald
 ./herald          # Start Telegram bot (default)
 ./herald ask "question"   # CLI mode for testing
 ```
+
+## CI/CD
+
+Two GitHub Actions workflows in `.github/workflows/`:
+
+**CI** (`ci.yml`) — runs on push/PR to `main`:
+- `go vet ./...`
+- `staticcheck` (via `dominikh/staticcheck-action`)
+- `go test ./...`
+
+**Release** (`release.yml`) — runs on tag push (`v*`):
+- Builds `linux/amd64` static binary with `-trimpath -ldflags="-s -w"`
+- Injects version from git tag via `-X main.version`
+- Creates GitHub Release with the binary attached (auto-generated release notes)
+
+## Release Process
+
+1. Ensure `main` is green (CI passing)
+2. Tag: `git tag v0.x.x && git push origin v0.x.x`
+3. Release workflow builds the binary and creates a GitHub Release automatically
+4. Deploy manually: download binary from the release, copy to LXC, restart service
+
+```bash
+# Example deploy
+scp herald-linux-amd64 root@192.168.0.107:/usr/local/bin/herald
+ssh root@192.168.0.107 systemctl restart herald
+```
+
+Versioning: [semver](https://semver.org/). Tags must match `v*` pattern.
 
 ## MVP Scope (v0.1.0)
 
