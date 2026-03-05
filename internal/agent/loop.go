@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -128,7 +129,11 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	response, err := l.provider.Chat(ctx, messages)
 	if err != nil {
 		log.Printf("provider error: %v", err)
-		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Sorry, I couldn't process your message. Please try again."}
+		errText := "Sorry, I couldn't process your message. Please try again."
+		if errors.Is(err, provider.ErrAuthFailure) {
+			errText = "All providers are currently unavailable due to authentication issues. Please contact the admin."
+		}
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
 		return
 	}
 

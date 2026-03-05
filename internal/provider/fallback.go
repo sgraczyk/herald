@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -52,7 +53,11 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 			return result, nil
 		}
 
-		log.Printf("provider %s failed: %v", p.Name(), err)
+		if errors.Is(err, ErrAuthFailure) {
+			log.Printf("provider %s: auth failure — token expired or invalid", p.Name())
+		} else {
+			log.Printf("provider %s failed: %v", p.Name(), err)
+		}
 		errs = append(errs, fmt.Sprintf("%s: %v", p.Name(), err))
 	}
 

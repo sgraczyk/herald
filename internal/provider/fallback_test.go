@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -91,6 +92,44 @@ func TestFallbackSetActiveUnknown(t *testing.T) {
 
 	if err := fb.SetActive("nonexistent"); err == nil {
 		t.Fatal("expected error for unknown provider")
+	}
+}
+
+func TestFallbackAuthErrorPropagated(t *testing.T) {
+	authErr := fmt.Errorf("claude: token expired: %w", ErrAuthFailure)
+	fb := NewFallback([]LLMProvider{
+		&stubProvider{name: "claude", err: authErr},
+		&stubProvider{name: "backup", err: fmt.Errorf("also down")},
+	})
+
+	_, err := fb.Chat(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected error when all providers fail")
+	}
+	if !errors.Is(err, ErrAuthFailure) {
+		// The combined error message should contain the auth error text.
+		if got := err.Error(); got == "" {
+			t.Error("expected non-empty error")
+		}
+	}
+}
+
+func TestFallbackAuthErrorFallsThrough(t *testing.T) {
+	authErr := fmt.Errorf("claude: token expired: %w", ErrAuthFailure)
+	fb := NewFallback([]LLMProvider{
+		&stubProvider{name: "claude", err: authErr},
+		&stubProvider{name: "backup", response: "fallback ok"},
+	})
+
+	got, err := fb.Chat(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "fallback ok" {
+		t.Errorf("expected 'fallback ok', got %q", got)
+	}
+	if fb.Name() != "backup" {
+		t.Errorf("expected active 'backup', got %q", fb.Name())
 	}
 }
 
