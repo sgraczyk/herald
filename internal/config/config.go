@@ -10,6 +10,7 @@ type Config struct {
 	Telegram       TelegramConfig   `json:"telegram"`
 	Providers      []ProviderConfig `json:"providers"`
 	Store          StoreConfig      `json:"store"`
+	HTTPPort       int              `json:"http_port,omitempty"`
 	HistoryLimit   int              `json:"history_limit"`
 	AllowedUserIDs []int64          `json:"-"`
 

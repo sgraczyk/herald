@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/sgraczyk/herald/internal/agent"
 	"github.com/sgraczyk/herald/internal/config"
+	"github.com/sgraczyk/herald/internal/health"
 	"github.com/sgraczyk/herald/internal/hub"
 	"github.com/sgraczyk/herald/internal/provider"
 	"github.com/sgraczyk/herald/internal/store"
@@ -79,6 +80,13 @@ func serve(configPath string) error {
 	// Graceful shutdown.
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// Start health server.
+	if cfg.HTTPPort > 0 {
+		srv := health.NewServer(cfg.HTTPPort, version, loop.StartTime(), chain.Name())
+		go srv.Run(ctx)
+		log.Printf("health endpoint on :%d", cfg.HTTPPort)
+	}
 
 	// Start agent loop.
 	go loop.Run(ctx)
