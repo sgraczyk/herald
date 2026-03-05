@@ -35,14 +35,20 @@ func NewServer(port int, version string, startTime time.Time, provider string) *
 	}
 }
 
-// Run starts the HTTP server. It blocks until ctx is cancelled.
-func (s *Server) Run(ctx context.Context) {
+// Start binds the listener and serves in the background. It returns an error
+// if the port cannot be bound. The server shuts down when ctx is cancelled.
+func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
 
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
+	if err != nil {
+		return fmt.Errorf("health server listen: %w", err)
+	}
+
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", s.port),
-		Handler: mux,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
 		BaseContext: func(_ net.Listener) context.Context {
 			return ctx
 		},
@@ -55,9 +61,13 @@ func (s *Server) Run(ctx context.Context) {
 		srv.Shutdown(shutdownCtx)
 	}()
 
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Printf("health server error: %v", err)
-	}
+	go func() {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			log.Printf("health server error: %v", err)
+		}
+	}()
+
+	return nil
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

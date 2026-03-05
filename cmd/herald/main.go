@@ -84,7 +84,9 @@ func serve(configPath string) error {
 	// Start health server.
 	if cfg.HTTPPort > 0 {
 		srv := health.NewServer(cfg.HTTPPort, version, loop.StartTime(), chain.Name())
-		go srv.Run(ctx)
+		if err := srv.Start(ctx); err != nil {
+			return fmt.Errorf("start health server: %w", err)
+		}
 		log.Printf("health endpoint on :%d", cfg.HTTPPort)
 	}
 

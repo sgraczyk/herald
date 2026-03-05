@@ -56,6 +56,10 @@ func Load(path string) (*Config, error) {
 		cfg.Store.Path = "herald.db"
 	}
 
+	if cfg.HTTPPort < 0 || cfg.HTTPPort > 65535 {
+		return nil, fmt.Errorf("invalid http_port: %d", cfg.HTTPPort)
+	}
+
 	// Resolve env vars.
 	if cfg.Telegram.TokenEnv != "" {
 		cfg.Telegram.Token = os.Getenv(cfg.Telegram.TokenEnv)
