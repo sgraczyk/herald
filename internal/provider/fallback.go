@@ -42,7 +42,7 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 	f.mu.RUnlock()
 
 	var errs []string
-	var hasAuthErr bool
+	var hasAuthErr, hasTimeout bool
 
 	for _, p := range providers {
 		result, err := p.Chat(ctx, messages)
@@ -57,6 +57,9 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 		if errors.Is(err, ErrAuthFailure) {
 			hasAuthErr = true
 			log.Printf("provider %s: auth failure — token expired or invalid", p.Name())
+		} else if errors.Is(err, ErrTimeout) {
+			hasTimeout = true
+			log.Printf("provider %s: timed out", p.Name())
 		} else {
 			log.Printf("provider %s failed: %v", p.Name(), err)
 		}
@@ -64,10 +67,14 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 	}
 
 	combined := fmt.Errorf("all providers failed: %s", strings.Join(errs, "; "))
-	if hasAuthErr {
+	switch {
+	case hasAuthErr:
 		return "", fmt.Errorf("%w: %w", combined, ErrAuthFailure)
+	case hasTimeout:
+		return "", fmt.Errorf("%w: %w", combined, ErrTimeout)
+	default:
+		return "", combined
 	}
-	return "", combined
 }
 
 // SetActive reorders the provider list so the named provider is tried first.

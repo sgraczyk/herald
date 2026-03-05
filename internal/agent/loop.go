@@ -129,9 +129,14 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	response, err := l.provider.Chat(ctx, messages)
 	if err != nil {
 		log.Printf("provider error: %v", err)
-		errText := "Sorry, I couldn't process your message. Please try again."
-		if errors.Is(err, provider.ErrAuthFailure) {
-			errText = "All providers are currently unavailable due to authentication issues. Please contact the admin."
+		var errText string
+		switch {
+		case errors.Is(err, provider.ErrTimeout):
+			errText = "Response took too long. Try a simpler question or try again shortly."
+		case errors.Is(err, provider.ErrAuthFailure):
+			errText = "Service configuration issue. The admin has been notified."
+		default:
+			errText = "I'm temporarily unavailable. Please try again shortly."
 		}
 		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
 		return

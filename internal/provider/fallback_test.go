@@ -130,6 +130,22 @@ func TestFallbackAuthErrorFallsThrough(t *testing.T) {
 	}
 }
 
+func TestFallbackTimeoutPropagated(t *testing.T) {
+	timeoutErr := fmt.Errorf("execute claude: %w: deadline exceeded", ErrTimeout)
+	fb := NewFallback([]LLMProvider{
+		&stubProvider{name: "claude", err: timeoutErr},
+		&stubProvider{name: "backup", err: fmt.Errorf("also down")},
+	})
+
+	_, err := fb.Chat(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected error when all providers fail")
+	}
+	if !errors.Is(err, ErrTimeout) {
+		t.Errorf("expected ErrTimeout in error chain, got: %v", err)
+	}
+}
+
 func TestFallbackProviders(t *testing.T) {
 	providers := []LLMProvider{
 		&stubProvider{name: "a"},

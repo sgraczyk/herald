@@ -60,6 +60,9 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message) (string, error) {
 
 	resp, err := o.client.Do(req)
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("send request: %w: %w", ErrTimeout, err)
+		}
 		return "", fmt.Errorf("send request: %w", err)
 	}
 	defer resp.Body.Close()

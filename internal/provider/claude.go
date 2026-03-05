@@ -57,6 +57,9 @@ func (c *Claude) Chat(ctx context.Context, messages []Message) (string, error) {
 
 	output, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("execute claude: %w: %w", ErrTimeout, err)
+		}
 		return "", fmt.Errorf("execute claude: %w", err)
 	}
 
