@@ -6,17 +6,22 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
 // claudeResponse is the JSON output from `claude -p --output-format json`.
 type claudeResponse struct {
-	Result string `json:"result"`
+	Result  string `json:"result"`
+	IsError bool   `json:"is_error"`
 }
 
 // Claude executes the Claude CLI in pipe mode.
 type Claude struct {
 	timeout time.Duration
+
+	mu         sync.RWMutex
+	authStatus string // "ok", "auth_error", or "" (unknown)
 }
 
 // NewClaude creates a new Claude CLI provider.
@@ -27,6 +32,19 @@ func NewClaude() *Claude {
 }
 
 func (c *Claude) Name() string { return "claude" }
+
+// AuthStatus returns the last known auth status: "ok", "auth_error", or "" (unknown).
+func (c *Claude) AuthStatus() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.authStatus
+}
+
+func (c *Claude) setAuthStatus(status string) {
+	c.mu.Lock()
+	c.authStatus = status
+	c.mu.Unlock()
+}
 
 func (c *Claude) Chat(ctx context.Context, messages []Message) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
@@ -47,11 +65,31 @@ func (c *Claude) Chat(ctx context.Context, messages []Message) (string, error) {
 		return "", fmt.Errorf("parse claude response: %w", err)
 	}
 
+	if resp.IsError {
+		if isAuthError(resp.Result) {
+			c.setAuthStatus("auth_error")
+			return "", fmt.Errorf("claude: %s: %w", resp.Result, ErrAuthFailure)
+		}
+		// CLI executed and authenticated — clear any stale auth_error.
+		c.setAuthStatus("ok")
+		return "", fmt.Errorf("claude error: %s", resp.Result)
+	}
+
 	if resp.Result == "" {
 		return "", fmt.Errorf("empty response from claude")
 	}
 
+	c.setAuthStatus("ok")
 	return resp.Result, nil
+}
+
+// isAuthError checks if the error message indicates an authentication problem.
+func isAuthError(msg string) bool {
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "not logged in") ||
+		strings.Contains(lower, "please run /login") ||
+		strings.Contains(lower, "token expired") ||
+		strings.Contains(lower, "unauthorized")
 }
 
 // buildClaudeInput assembles the conversation into a single prompt string.

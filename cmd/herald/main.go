@@ -91,7 +91,14 @@ func serve(configPath string) error {
 				tokenExpires = ""
 			}
 		}
-		srv := health.NewServer(cfg.HTTPPort, version, loop.StartTime(), chain.Name(), tokenExpires)
+		var claude health.ProviderStatus
+		for _, p := range providers {
+			if c, ok := p.(*provider.Claude); ok {
+				claude = c
+				break
+			}
+		}
+		srv := health.NewServer(cfg.HTTPPort, version, loop.StartTime(), chain.Name(), claude, tokenExpires)
 		if err := srv.Start(ctx); err != nil {
 			return fmt.Errorf("start health server: %w", err)
 		}

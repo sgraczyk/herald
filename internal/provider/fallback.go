@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -41,6 +42,7 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 	f.mu.RUnlock()
 
 	var errs []string
+	var hasAuthErr bool
 
 	for _, p := range providers {
 		result, err := p.Chat(ctx, messages)
@@ -52,11 +54,20 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 			return result, nil
 		}
 
-		log.Printf("provider %s failed: %v", p.Name(), err)
+		if errors.Is(err, ErrAuthFailure) {
+			hasAuthErr = true
+			log.Printf("provider %s: auth failure — token expired or invalid", p.Name())
+		} else {
+			log.Printf("provider %s failed: %v", p.Name(), err)
+		}
 		errs = append(errs, fmt.Sprintf("%s: %v", p.Name(), err))
 	}
 
-	return "", fmt.Errorf("all providers failed: %s", strings.Join(errs, "; "))
+	combined := fmt.Errorf("all providers failed: %s", strings.Join(errs, "; "))
+	if hasAuthErr {
+		return "", fmt.Errorf("%w: %w", combined, ErrAuthFailure)
+	}
+	return "", combined
 }
 
 // SetActive reorders the provider list so the named provider is tried first.

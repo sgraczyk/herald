@@ -10,11 +10,18 @@ import (
 	"time"
 )
 
+// ProviderStatus provides dynamic provider information for the health endpoint.
+type ProviderStatus interface {
+	Name() string
+	AuthStatus() string
+}
+
 type response struct {
 	Status       string `json:"status"`
 	Version      string `json:"version"`
 	Uptime       string `json:"uptime"`
 	Provider     string `json:"provider"`
+	ClaudeStatus string `json:"claude_status,omitempty"`
 	TokenExpires string `json:"token_expires,omitempty"`
 }
 
@@ -24,16 +31,18 @@ type Server struct {
 	version      string
 	startTime    time.Time
 	provider     string
+	claude       ProviderStatus
 	tokenExpires string
 }
 
 // NewServer creates a health server.
-func NewServer(port int, version string, startTime time.Time, provider string, tokenExpires string) *Server {
+func NewServer(port int, version string, startTime time.Time, provider string, claude ProviderStatus, tokenExpires string) *Server {
 	return &Server{
 		port:         port,
 		version:      version,
 		startTime:    startTime,
 		provider:     provider,
+		claude:       claude,
 		tokenExpires: tokenExpires,
 	}
 }
@@ -80,6 +89,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		Uptime:       time.Since(s.startTime).Truncate(time.Second).String(),
 		Provider:     s.provider,
 		TokenExpires: s.tokenExpires,
+	}
+
+	if s.claude != nil {
+		if status := s.claude.AuthStatus(); status != "" {
+			resp.ClaudeStatus = status
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

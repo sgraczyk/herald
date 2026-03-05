@@ -2,8 +2,14 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrAuthFailure indicates that a provider failed due to expired or invalid
+// credentials. Callers can check for this with errors.Is to provide targeted
+// user-facing messages and health status reporting.
+var ErrAuthFailure = errors.New("provider auth failure")
 
 // Message represents a single message in a conversation.
 type Message struct {
