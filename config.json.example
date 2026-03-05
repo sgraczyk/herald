@@ -18,6 +18,7 @@
   "store": {
     "path": "herald.db"
   },
+  "http_port": 8080,
   "history_limit": 50,
   "allowed_user_ids_env": "ALLOWED_USER_IDS"
 }

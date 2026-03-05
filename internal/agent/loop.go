@@ -31,6 +31,9 @@ func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit int) 
 	}
 }
 
+// StartTime returns when the loop was created.
+func (l *Loop) StartTime() time.Time { return l.startTime }
+
 // Run starts the agent loop. It blocks until ctx is cancelled.
 func (l *Loop) Run(ctx context.Context) {
 	for {

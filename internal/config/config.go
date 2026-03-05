@@ -10,6 +10,7 @@ type Config struct {
 	Telegram       TelegramConfig   `json:"telegram"`
 	Providers      []ProviderConfig `json:"providers"`
 	Store          StoreConfig      `json:"store"`
+	HTTPPort       int              `json:"http_port,omitempty"`
 	HistoryLimit   int              `json:"history_limit"`
 	AllowedUserIDs []int64          `json:"-"`
 
@@ -53,6 +54,10 @@ func Load(path string) (*Config, error) {
 
 	if cfg.Store.Path == "" {
 		cfg.Store.Path = "herald.db"
+	}
+
+	if cfg.HTTPPort < 0 || cfg.HTTPPort > 65535 {
+		return nil, fmt.Errorf("invalid http_port: %d", cfg.HTTPPort)
 	}
 
 	// Resolve env vars.
