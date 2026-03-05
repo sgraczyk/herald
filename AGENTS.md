@@ -47,7 +47,7 @@ Telegram ──write──> Hub.In ──read──> Agent Loop ──call──
                                          │
                                          ├──read/write──> Store (bbolt)
                                          │
-                                         └──write──> Hub.Out ──read──> Telegram
+                                         └──write──> Hub.Out ──read──> Format (md→HTML) ──send──> Telegram
 ```
 
 The **hub** is the central message router using Go channels. The Telegram adapter writes incoming messages to `Hub.In`, the agent loop reads them, calls the LLM provider, and writes responses to `Hub.Out`, which the Telegram adapter reads and sends back.
@@ -68,6 +68,7 @@ The `claude -p` provider executes the Claude CLI in pipe mode with `--output-for
 |---------|---------|-------|
 | `github.com/go-telegram/bot` | Telegram Bot API | 0 transitive deps, Bot API 9.4 |
 | `github.com/spf13/cobra` | CLI framework | ~3 transitive deps |
+| `github.com/yuin/goldmark` | Markdown parser | 0 transitive deps, CommonMark-compliant |
 | `go.etcd.io/bbolt` | Embedded key/value store | 0 transitive deps, pure Go |
 
 No CGO. Single static binary. Cross-compiles trivially with `GOOS=linux GOARCH=amd64`.
@@ -82,6 +83,8 @@ internal/
   agent/
     loop.go                  # Agent loop: read hub, call LLM, write response
     context.go               # System prompt assembly (personality + memory + history)
+  format/
+    telegram.go              # Markdown → Telegram HTML converter (goldmark-based)
   telegram/
     adapter.go               # go-telegram/bot long-polling, user whitelist
   provider/
