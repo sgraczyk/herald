@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/sgraczyk/herald/internal/agent"
@@ -83,7 +84,14 @@ func serve(configPath string) error {
 
 	// Start health server.
 	if cfg.HTTPPort > 0 {
-		srv := health.NewServer(cfg.HTTPPort, version, loop.StartTime(), chain.Name())
+		tokenExpires := os.Getenv("CLAUDE_TOKEN_EXPIRES")
+		if tokenExpires != "" {
+			if _, err := time.Parse("2006-01-02", tokenExpires); err != nil {
+				log.Printf("warning: invalid CLAUDE_TOKEN_EXPIRES %q, ignoring", tokenExpires)
+				tokenExpires = ""
+			}
+		}
+		srv := health.NewServer(cfg.HTTPPort, version, loop.StartTime(), chain.Name(), tokenExpires)
 		if err := srv.Start(ctx); err != nil {
 			return fmt.Errorf("start health server: %w", err)
 		}
