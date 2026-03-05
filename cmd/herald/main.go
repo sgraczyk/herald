@@ -83,7 +83,8 @@ func serve(configPath string) error {
 
 	// Start health server.
 	if cfg.HTTPPort > 0 {
-		srv := health.NewServer(cfg.HTTPPort, version, loop.StartTime(), chain.Name())
+		tokenExpires := os.Getenv("CLAUDE_TOKEN_EXPIRES")
+		srv := health.NewServer(cfg.HTTPPort, version, loop.StartTime(), chain.Name(), tokenExpires)
 		if err := srv.Start(ctx); err != nil {
 			return fmt.Errorf("start health server: %w", err)
 		}

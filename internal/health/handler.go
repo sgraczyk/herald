@@ -11,27 +11,30 @@ import (
 )
 
 type response struct {
-	Status   string `json:"status"`
-	Version  string `json:"version"`
-	Uptime   string `json:"uptime"`
-	Provider string `json:"provider"`
+	Status       string `json:"status"`
+	Version      string `json:"version"`
+	Uptime       string `json:"uptime"`
+	Provider     string `json:"provider"`
+	TokenExpires string `json:"token_expires,omitempty"`
 }
 
 // Server serves the health endpoint.
 type Server struct {
-	port      int
-	version   string
-	startTime time.Time
-	provider  string
+	port         int
+	version      string
+	startTime    time.Time
+	provider     string
+	tokenExpires string
 }
 
 // NewServer creates a health server.
-func NewServer(port int, version string, startTime time.Time, provider string) *Server {
+func NewServer(port int, version string, startTime time.Time, provider string, tokenExpires string) *Server {
 	return &Server{
-		port:      port,
-		version:   version,
-		startTime: startTime,
-		provider:  provider,
+		port:         port,
+		version:      version,
+		startTime:    startTime,
+		provider:     provider,
+		tokenExpires: tokenExpires,
 	}
 }
 
@@ -72,10 +75,11 @@ func (s *Server) Start(ctx context.Context) error {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	resp := response{
-		Status:   "ok",
-		Version:  s.version,
-		Uptime:   time.Since(s.startTime).Truncate(time.Second).String(),
-		Provider: s.provider,
+		Status:       "ok",
+		Version:      s.version,
+		Uptime:       time.Since(s.startTime).Truncate(time.Second).String(),
+		Provider:     s.provider,
+		TokenExpires: s.tokenExpires,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
