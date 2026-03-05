@@ -1,6 +1,7 @@
 package format
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -129,10 +130,10 @@ func TestTelegramHTML_TwoColumnTable(t *testing.T) {
 	got := TelegramHTML(input)
 	// Two-column table should render as key-value bullet list.
 	// Bold markdown in cells is preserved inside the key's <b> wrapper.
-	if !contains(got, "Temperature") || !contains(got, "15°C") || !contains(got, "•") {
+	if !strings.Contains(got, "Temperature") || !strings.Contains(got, "15°C") || !strings.Contains(got, "•") {
 		t.Errorf("expected key-value format with temperature, got:\n%s", got)
 	}
-	if !contains(got, "Sky") || !contains(got, "Sunny") {
+	if !strings.Contains(got, "Sky") || !strings.Contains(got, "Sunny") {
 		t.Errorf("expected key-value format with sky, got:\n%s", got)
 	}
 }
@@ -144,10 +145,10 @@ func TestTelegramHTML_WideTable(t *testing.T) {
 | Bob | 25 | LA |`
 	got := TelegramHTML(input)
 	// Wide table should render as pre-formatted block
-	if !contains(got, "<pre>") {
+	if !strings.Contains(got, "<pre>") {
 		t.Errorf("expected pre block for wide table, got:\n%s", got)
 	}
-	if !contains(got, "Alice") || !contains(got, "Bob") {
+	if !strings.Contains(got, "Alice") || !strings.Contains(got, "Bob") {
 		t.Errorf("expected table data, got:\n%s", got)
 	}
 }
@@ -177,16 +178,16 @@ func TestTelegramHTML_MixedContent(t *testing.T) {
 
 > Stay warm!`
 	got := TelegramHTML(input)
-	if !contains(got, "<b>Weather Report</b>") {
+	if !strings.Contains(got, "<b>Weather Report</b>") {
 		t.Errorf("expected heading as bold, got:\n%s", got)
 	}
-	if !contains(got, "<b>Today&#39;s forecast:</b>") {
+	if !strings.Contains(got, "<b>Today&#39;s forecast:</b>") {
 		t.Errorf("expected bold text, got:\n%s", got)
 	}
-	if !contains(got, "• Temperature: <i>15°C</i>") {
+	if !strings.Contains(got, "• Temperature: <i>15°C</i>") {
 		t.Errorf("expected list with italic, got:\n%s", got)
 	}
-	if !contains(got, "<blockquote>") {
+	if !strings.Contains(got, "<blockquote>") {
 		t.Errorf("expected blockquote, got:\n%s", got)
 	}
 }
@@ -209,15 +210,3 @@ func TestStripHTMLTags(t *testing.T) {
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
-}
-
-func containsStr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
