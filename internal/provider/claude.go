@@ -70,6 +70,8 @@ func (c *Claude) Chat(ctx context.Context, messages []Message) (string, error) {
 			c.setAuthStatus("auth_error")
 			return "", fmt.Errorf("claude: %s: %w", resp.Result, ErrAuthFailure)
 		}
+		// CLI executed and authenticated — clear any stale auth_error.
+		c.setAuthStatus("ok")
 		return "", fmt.Errorf("claude error: %s", resp.Result)
 	}
 

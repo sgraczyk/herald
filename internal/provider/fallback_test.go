@@ -107,10 +107,7 @@ func TestFallbackAuthErrorPropagated(t *testing.T) {
 		t.Fatal("expected error when all providers fail")
 	}
 	if !errors.Is(err, ErrAuthFailure) {
-		// The combined error message should contain the auth error text.
-		if got := err.Error(); got == "" {
-			t.Error("expected non-empty error")
-		}
+		t.Errorf("expected ErrAuthFailure in error chain, got: %v", err)
 	}
 }
 
