@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -142,6 +143,42 @@ func TestModelCommandInvalid(t *testing.T) {
 	out := readOut(t, h)
 	if !strings.Contains(out.Text, "Error:") {
 		t.Errorf("expected error message, got %q", out.Text)
+	}
+}
+
+func TestHandleMessageErrorTimeout(t *testing.T) {
+	mock := &mockProvider{name: "test", err: fmt.Errorf("slow: %w", provider.ErrTimeout)}
+	l, h, _ := testLoop(t, mock)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hello"})
+
+	out := readOut(t, h)
+	if !strings.Contains(out.Text, "took too long") {
+		t.Errorf("expected timeout message, got %q", out.Text)
+	}
+}
+
+func TestHandleMessageErrorAuth(t *testing.T) {
+	mock := &mockProvider{name: "test", err: fmt.Errorf("bad creds: %w", provider.ErrAuthFailure)}
+	l, h, _ := testLoop(t, mock)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hello"})
+
+	out := readOut(t, h)
+	if !strings.Contains(out.Text, "configuration issue") {
+		t.Errorf("expected auth error message, got %q", out.Text)
+	}
+}
+
+func TestHandleMessageErrorGeneric(t *testing.T) {
+	mock := &mockProvider{name: "test", err: fmt.Errorf("something broke")}
+	l, h, _ := testLoop(t, mock)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hello"})
+
+	out := readOut(t, h)
+	if !strings.Contains(out.Text, "temporarily unavailable") {
+		t.Errorf("expected generic error message, got %q", out.Text)
 	}
 }
 

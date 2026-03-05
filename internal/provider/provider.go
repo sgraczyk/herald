@@ -11,6 +11,9 @@ import (
 // user-facing messages and health status reporting.
 var ErrAuthFailure = errors.New("provider auth failure")
 
+// ErrTimeout indicates that a provider call exceeded its deadline.
+var ErrTimeout = errors.New("provider timeout")
+
 // Message represents a single message in a conversation.
 type Message struct {
 	Role      string    `json:"role"`    // "user", "assistant", "system"
