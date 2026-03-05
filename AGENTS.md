@@ -2,7 +2,11 @@
 
 Lightweight, self-hosted AI assistant bot for Telegram. Single Go binary, bbolt storage, minimal dependencies. Deployed as an LXC container on Proxmox.
 
-Tracking issue: [sgraczyk/homelab#30](https://github.com/sgraczyk/homelab/issues/30)
+Part of the [sgraczyk/homelab](https://github.com/sgraczyk/homelab) project. Tracking issue: [homelab#30](https://github.com/sgraczyk/homelab/issues/30).
+
+## Task Tracking
+
+All tasks and open work items are tracked as GitHub Issues in this repo. When asked about tasks, remaining work, or what to do next, check `gh issue list`.
 
 ## Architecture
 
@@ -161,6 +165,35 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o herald ./cmd/herald
 ./herald          # Start Telegram bot (default)
 ./herald ask "question"   # CLI mode for testing
 ```
+
+## CI/CD
+
+Two GitHub Actions workflows in `.github/workflows/`:
+
+**CI** (`ci.yml`) — runs on push/PR to `main`:
+- `go vet ./...`
+- `staticcheck` (via `dominikh/staticcheck-action`)
+- `go test ./...`
+
+**Release** (`release.yml`) — runs on tag push (`v*`):
+- Builds `linux/amd64` static binary with `-trimpath -ldflags="-s -w"`
+- Injects version from git tag via `-X main.version`
+- Creates GitHub Release with the binary attached (auto-generated release notes)
+
+## Release Process
+
+1. Ensure `main` is green (CI passing)
+2. Tag: `git tag v0.x.x && git push origin v0.x.x`
+3. Release workflow builds the binary and creates a GitHub Release automatically
+4. Deploy manually: download binary from the release, copy to LXC, restart service
+
+```bash
+# Example deploy
+scp herald-linux-amd64 root@192.168.0.107:/usr/local/bin/herald
+ssh root@192.168.0.107 systemctl restart herald
+```
+
+Versioning: [semver](https://semver.org/). Tags must match `v*` pattern.
 
 ## MVP Scope (v0.1.0)
 
