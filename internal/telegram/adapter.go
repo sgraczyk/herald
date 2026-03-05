@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/sgraczyk/herald/internal/format"
 	"github.com/sgraczyk/herald/internal/hub"
 )
 
@@ -96,12 +97,22 @@ func (a *Adapter) dispatchOut(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case msg := <-a.hub.Out:
+			formatted := format.TelegramHTML(msg.Text)
 			_, err := a.bot.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID: msg.ChatID,
-				Text:   msg.Text,
+				ChatID:    msg.ChatID,
+				Text:      formatted,
+				ParseMode: models.ParseModeHTML,
 			})
 			if err != nil {
-				log.Printf("send message to chat %d: %v", msg.ChatID, err)
+				// Fallback: send as plain text if HTML parsing fails.
+				log.Printf("send HTML message to chat %d failed, retrying as plain text: %v", msg.ChatID, err)
+				_, err = a.bot.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID: msg.ChatID,
+					Text:   msg.Text,
+				})
+				if err != nil {
+					log.Printf("send message to chat %d: %v", msg.ChatID, err)
+				}
 			}
 		}
 	}
