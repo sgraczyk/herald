@@ -18,8 +18,8 @@ All work **must** follow this process. No exceptions. AI agents must enforce thi
 7. Review PR             — Check diff, verify acceptance criteria are met
 8. Apply Changes         — Address review feedback if any
 9. Retest                — Run tests again after changes
-10. Merge with Squash    — `gh pr merge --squash`, confirm issue closes
-11. Back to Main         — `git checkout main && git pull`, pick up next task
+10. Merge with Squash   — `gh pr merge --squash`, confirm issue closes
+11. Back to Main        — `git checkout main && git pull`, pick up next task
 ```
 
 **Between tasks:** always return to `main`, pull latest, and check `gh issue list` for the next item.
