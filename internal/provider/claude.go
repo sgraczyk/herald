@@ -22,7 +22,7 @@ type Claude struct {
 // NewClaude creates a new Claude CLI provider.
 func NewClaude() *Claude {
 	return &Claude{
-		timeout: 30 * time.Second,
+		timeout: 60 * time.Second,
 	}
 }
 
@@ -34,7 +34,7 @@ func (c *Claude) Chat(ctx context.Context, messages []Message) (string, error) {
 
 	input := buildClaudeInput(messages)
 
-	cmd := exec.CommandContext(ctx, "claude", "-p", "--output-format", "json")
+	cmd := exec.CommandContext(ctx, "claude", "-p", "--output-format", "json", "--allowedTools", "WebSearch,WebFetch")
 	cmd.Stdin = strings.NewReader(input)
 
 	output, err := cmd.Output()
