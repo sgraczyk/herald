@@ -4,9 +4,39 @@ Lightweight, self-hosted AI assistant bot for Telegram. Single Go binary, bbolt 
 
 Part of the [sgraczyk/homelab](https://github.com/sgraczyk/homelab) project. Tracking issue: [homelab#30](https://github.com/sgraczyk/homelab/issues/30).
 
+## Workflow
+
+All work **must** follow this process. No exceptions. AI agents must enforce this on every task.
+
+```
+1. Problem Statement     — Understand the problem, gather context
+2. Create GitHub Issue   — `gh issue create` with clear acceptance criteria
+3. Plan Work             — Research codebase, design approach, get user approval
+4. Implement Plan        — Write code on a feature branch
+5. Test Implementation   — `go test ./...`, `go vet ./...`, manual verification
+6. Create PR             — `gh pr create`, link the issue
+7. Review PR             — Check diff, verify acceptance criteria are met
+8. Apply Changes         — Address review feedback if any
+9. Retest                — Run tests again after changes
+10. Merge with Squash    — `gh pr merge --squash`, confirm issue closes
+11. Back to Main         — `git checkout main && git pull`, pick up next task
+```
+
+**Between tasks:** always return to `main`, pull latest, and check `gh issue list` for the next item.
+
 ## Task Tracking
 
 All tasks and open work items are tracked as GitHub Issues in this repo. When asked about tasks, remaining work, or what to do next, check `gh issue list`.
+
+## AGENTS.md Maintenance
+
+This file is the source of truth for project conventions. AI agents should periodically validate that it matches reality:
+- Verify repo structure section matches actual files (`find internal/ -name '*.go'`)
+- Verify CI/CD section matches workflow YAML files
+- Verify deployment section matches current infrastructure
+- Flag any drift as a new GitHub Issue
+
+When conventions change (new patterns, new tools, new workflows), update this file as part of the same PR.
 
 ## Architecture
 
