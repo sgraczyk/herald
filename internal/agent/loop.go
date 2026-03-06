@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -70,7 +70,7 @@ func (l *Loop) handle(ctx context.Context, msg hub.InMessage) {
 
 func (l *Loop) handleClear(msg hub.InMessage) {
 	if err := l.store.Clear(msg.ChatID); err != nil {
-		log.Printf("clear chat %d: %v", msg.ChatID, err)
+		slog.Error("clear chat failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to clear history."}
 		return
 	}
@@ -80,7 +80,7 @@ func (l *Loop) handleClear(msg hub.InMessage) {
 func (l *Loop) handleStatus(msg hub.InMessage) {
 	count, err := l.store.Count(msg.ChatID)
 	if err != nil {
-		log.Printf("count chat %d: %v", msg.ChatID, err)
+		slog.Error("count chat failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 	}
 	uptime := time.Since(l.startTime).Truncate(time.Second)
 	text := fmt.Sprintf("Provider: %s\nMessages: %d/%d\nUptime: %s", l.provider.Name(), count, l.historyLimit, uptime)
@@ -127,7 +127,7 @@ func (l *Loop) handleRemember(msg hub.InMessage) {
 		Timestamp: time.Now(),
 	}
 	if err := l.store.AddMemory(msg.ChatID, mem); err != nil {
-		log.Printf("add memory chat %d: %v", msg.ChatID, err)
+		slog.Error("add memory failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to save memory."}
 		return
 	}
@@ -142,7 +142,7 @@ func (l *Loop) handleForget(msg hub.InMessage) {
 
 	removed, err := l.store.RemoveMemory(msg.ChatID, msg.Text)
 	if err != nil {
-		log.Printf("remove memory chat %d: %v", msg.ChatID, err)
+		slog.Error("remove memory failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to remove memory."}
 		return
 	}
@@ -156,7 +156,7 @@ func (l *Loop) handleForget(msg hub.InMessage) {
 func (l *Loop) handleMemories(msg hub.InMessage) {
 	mems, err := l.store.ListMemories(msg.ChatID)
 	if err != nil {
-		log.Printf("list memories chat %d: %v", msg.ChatID, err)
+		slog.Error("list memories failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to list memories."}
 		return
 	}
@@ -181,17 +181,17 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		Timestamp: time.Now(),
 	}
 	if err := l.store.Append(msg.ChatID, userMsg, l.historyLimit); err != nil {
-		log.Printf("save user message: %v", err)
+		slog.Error("save user message failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 	}
 
 	// Load history and memories.
 	history, err := l.store.List(msg.ChatID)
 	if err != nil {
-		log.Printf("load history: %v", err)
+		slog.Error("load history failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 	}
 	memories, err := l.store.ListMemories(msg.ChatID)
 	if err != nil {
-		log.Printf("load memories: %v", err)
+		slog.Error("load memories failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 	}
 
 	// Signal typing indicator before calling the provider.
@@ -201,7 +201,7 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	messages := buildMessages(history, memories, msg.Text)
 	response, err := l.provider.Chat(ctx, messages)
 	if err != nil {
-		log.Printf("provider error: %v", err)
+		slog.Error("provider call failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 		var errText string
 		switch {
 		case errors.Is(err, provider.ErrTimeout):
@@ -222,7 +222,7 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		Timestamp: time.Now(),
 	}
 	if err := l.store.Append(msg.ChatID, assistantMsg, l.historyLimit); err != nil {
-		log.Printf("save assistant message: %v", err)
+		slog.Error("save assistant message failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 	}
 
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: response}
@@ -250,7 +250,7 @@ func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assi
 
 	resp, err := l.provider.Chat(ctx, msgs)
 	if err != nil {
-		log.Printf("extract memories: %v", err)
+		slog.Debug("extract memories failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 		return
 	}
 
@@ -263,7 +263,7 @@ func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assi
 
 	var facts []string
 	if err := json.Unmarshal([]byte(resp), &facts); err != nil {
-		log.Printf("parse extracted memories: %v (response: %q)", err, resp)
+		slog.Debug("parse extracted memories failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()), slog.String("response", resp))
 		return
 	}
 
@@ -275,7 +275,7 @@ func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assi
 
 		exists, err := l.store.HasMemory(chatID, fact)
 		if err != nil {
-			log.Printf("check memory exists: %v", err)
+			slog.Debug("check memory exists failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 			continue
 		}
 		if exists {
@@ -288,7 +288,7 @@ func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assi
 			Timestamp: time.Now(),
 		}
 		if err := l.store.AddMemory(chatID, mem); err != nil {
-			log.Printf("save extracted memory: %v", err)
+			slog.Debug("save extracted memory failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 		}
 	}
 }

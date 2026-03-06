@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 )
@@ -56,12 +56,12 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 
 		if errors.Is(err, ErrAuthFailure) {
 			hasAuthErr = true
-			log.Printf("provider %s: auth failure — token expired or invalid", p.Name())
+			slog.Warn("provider auth failure", slog.String("provider", p.Name()))
 		} else if errors.Is(err, ErrTimeout) {
 			hasTimeout = true
-			log.Printf("provider %s: timed out", p.Name())
+			slog.Warn("provider timed out", slog.String("provider", p.Name()))
 		} else {
-			log.Printf("provider %s failed: %v", p.Name(), err)
+			slog.Warn("provider failed", slog.String("provider", p.Name()), slog.String("error", err.Error()))
 		}
 		errs = append(errs, fmt.Sprintf("%s: %v", p.Name(), err))
 	}
