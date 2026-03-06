@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+// NameProvider returns a display name. It is called on every request so the
+// value can change at runtime (e.g. after a provider switch).
+type NameProvider interface {
+	Name() string
+}
+
 // ProviderStatus provides dynamic provider information for the health endpoint.
 type ProviderStatus interface {
 	Name() string
@@ -30,13 +36,13 @@ type Server struct {
 	port         int
 	version      string
 	startTime    time.Time
-	provider     string
+	provider     NameProvider
 	claude       ProviderStatus
 	tokenExpires string
 }
 
 // NewServer creates a health server.
-func NewServer(port int, version string, startTime time.Time, provider string, claude ProviderStatus, tokenExpires string) *Server {
+func NewServer(port int, version string, startTime time.Time, provider NameProvider, claude ProviderStatus, tokenExpires string) *Server {
 	return &Server{
 		port:         port,
 		version:      version,
@@ -87,7 +93,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		Status:       "ok",
 		Version:      s.version,
 		Uptime:       time.Since(s.startTime).Truncate(time.Second).String(),
-		Provider:     s.provider,
+		Provider:     s.provider.Name(),
 		TokenExpires: s.tokenExpires,
 	}
 

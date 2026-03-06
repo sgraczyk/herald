@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+type stubName struct{ name string }
+
+func (s *stubName) Name() string { return s.name }
+
 type stubProvider struct {
 	name       string
 	authStatus string
@@ -18,7 +22,7 @@ func (s *stubProvider) AuthStatus() string { return s.authStatus }
 
 func TestHandleHealth(t *testing.T) {
 	start := time.Now().Add(-10 * time.Second)
-	srv := NewServer(0, "v0.1.0", start, "claude-cli", nil, "")
+	srv := NewServer(0, "v0.1.0", start, &stubName{"claude-cli"}, nil, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -61,7 +65,7 @@ func TestHandleHealth(t *testing.T) {
 
 func TestHandleHealthWithTokenExpiry(t *testing.T) {
 	start := time.Now().Add(-10 * time.Second)
-	srv := NewServer(0, "v0.1.0", start, "claude-cli", nil, "2027-03-05")
+	srv := NewServer(0, "v0.1.0", start, &stubName{"claude-cli"}, nil, "2027-03-05")
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -81,7 +85,7 @@ func TestHandleHealthWithTokenExpiry(t *testing.T) {
 func TestHandleHealthWithClaudeAuthError(t *testing.T) {
 	start := time.Now().Add(-10 * time.Second)
 	claude := &stubProvider{name: "claude", authStatus: "auth_error"}
-	srv := NewServer(0, "v0.1.0", start, "claude", claude, "")
+	srv := NewServer(0, "v0.1.0", start, &stubName{"claude"}, claude, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -98,10 +102,43 @@ func TestHandleHealthWithClaudeAuthError(t *testing.T) {
 	}
 }
 
+func TestHandleHealthDynamicProviderName(t *testing.T) {
+	start := time.Now().Add(-10 * time.Second)
+	np := &stubName{"provider-a"}
+	srv := NewServer(0, "v0.1.0", start, np, nil, "")
+
+	// First request returns initial name.
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	srv.handleHealth(rec, req)
+
+	var resp response
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Provider != "provider-a" {
+		t.Errorf("expected provider 'provider-a', got %q", resp.Provider)
+	}
+
+	// Simulate provider switch.
+	np.name = "provider-b"
+
+	req = httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec = httptest.NewRecorder()
+	srv.handleHealth(rec, req)
+
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Provider != "provider-b" {
+		t.Errorf("expected provider 'provider-b', got %q", resp.Provider)
+	}
+}
+
 func TestHandleHealthWithClaudeOK(t *testing.T) {
 	start := time.Now().Add(-10 * time.Second)
 	claude := &stubProvider{name: "claude", authStatus: "ok"}
-	srv := NewServer(0, "v0.1.0", start, "claude", claude, "")
+	srv := NewServer(0, "v0.1.0", start, &stubName{"claude"}, claude, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
