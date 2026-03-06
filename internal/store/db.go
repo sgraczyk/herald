@@ -6,7 +6,10 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-var messagesBucket = []byte("messages")
+var (
+	messagesBucket  = []byte("messages")
+	memoriesBucket  = []byte("memories")
+)
 
 // DB wraps a bbolt database for Herald storage.
 type DB struct {
@@ -22,7 +25,10 @@ func Open(path string) (*DB, error) {
 
 	// Ensure top-level buckets exist.
 	err = db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(messagesBucket)
+		if _, err := tx.CreateBucketIfNotExists(messagesBucket); err != nil {
+			return err
+		}
+		_, err := tx.CreateBucketIfNotExists(memoriesBucket)
 		return err
 	})
 	if err != nil {
