@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/sgraczyk/herald/internal/hub"
@@ -38,8 +39,16 @@ func TestNewZeroFilteredFromAllowedIDs(t *testing.T) {
 	if err == nil {
 		return // bot.New succeeded (unlikely with fake token, but acceptable)
 	}
-	if err.Error() == "no valid allowed user IDs configured" {
+	if strings.Contains(err.Error(), "no valid allowed user IDs") {
 		t.Fatal("zero ID was not filtered; valid ID 12345 should have been kept")
+	}
+}
+
+func TestNewNegativeIDsFiltered(t *testing.T) {
+	h := hub.New()
+	_, err := New("test-token", h, []int64{-1, -999})
+	if err == nil {
+		t.Fatal("expected error when all IDs are negative, got nil")
 	}
 }
 

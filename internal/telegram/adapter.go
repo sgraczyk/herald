@@ -34,7 +34,7 @@ func New(token string, h *hub.Hub, allowedUserIDs []int64) (*Adapter, error) {
 	}
 
 	for _, id := range allowedUserIDs {
-		if id != 0 {
+		if id > 0 {
 			a.allowedIDs[id] = true
 		}
 	}
