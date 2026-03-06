@@ -25,6 +25,7 @@ type Adapter struct {
 }
 
 // New creates a new Telegram adapter.
+// It returns an error if allowedUserIDs is empty, enforcing fail-closed access control.
 func New(token string, h *hub.Hub, allowedUserIDs []int64) (*Adapter, error) {
 	a := &Adapter{
 		hub:        h,
@@ -33,7 +34,13 @@ func New(token string, h *hub.Hub, allowedUserIDs []int64) (*Adapter, error) {
 	}
 
 	for _, id := range allowedUserIDs {
-		a.allowedIDs[id] = true
+		if id != 0 {
+			a.allowedIDs[id] = true
+		}
+	}
+
+	if len(a.allowedIDs) == 0 {
+		return nil, fmt.Errorf("no valid allowed user IDs configured")
 	}
 
 	b, err := bot.New(token,
@@ -67,7 +74,7 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 	chatID := msg.Chat.ID
 
 	// Reject unauthorized users.
-	if len(a.allowedIDs) > 0 && !a.allowedIDs[userID] {
+	if !a.allowedIDs[userID] {
 		slog.Warn("rejected message from unauthorized user", slog.Int64("user_id", userID))
 		return
 	}
