@@ -457,7 +457,6 @@ func (c *capturingProvider) Chat(_ context.Context, msgs []provider.Message) (st
 func TestHandleMessageNoDuplicateUserMessage(t *testing.T) {
 	cap := &capturingProvider{responses: []string{"response", "[]"}}
 	l, h, db := testLoop(t, cap)
-	l.provider = cap
 
 	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hello"})
 	readOut(t, h)
@@ -495,7 +494,6 @@ func TestHandleMessageNoDuplicateUserMessage(t *testing.T) {
 func TestHandleMessageNoDuplicateWithHistory(t *testing.T) {
 	cap := &capturingProvider{responses: []string{"response", "[]"}}
 	l, h, db := testLoop(t, cap)
-	l.provider = cap
 
 	// Pre-populate history.
 	_ = db.Append(1, provider.Message{Role: "user", Content: "previous"}, 50)
@@ -513,6 +511,19 @@ func TestHandleMessageNoDuplicateWithHistory(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("expected user message 'new message' exactly once, found %d times", count)
+	}
+}
+
+func TestHandleMessageErrorDoesNotSaveUserMessage(t *testing.T) {
+	mock := &mockProvider{name: "test", err: fmt.Errorf("provider down")}
+	l, h, db := testLoop(t, mock)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hello"})
+	readOut(t, h)
+
+	stored, _ := db.List(1)
+	if len(stored) != 0 {
+		t.Errorf("expected no messages in store on provider error, got %d", len(stored))
 	}
 }
 
