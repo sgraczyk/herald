@@ -132,7 +132,7 @@ func serve(configPath string) error {
 				break
 			}
 		}
-		srv := health.NewServer(cfg.HTTPPort, version, loop.StartTime(), chain.Name(), claude, tokenExpires)
+		srv := health.NewServer(cfg.HTTPPort, version, loop.StartTime(), chain, claude, tokenExpires)
 		if err := srv.Start(ctx); err != nil {
 			return fmt.Errorf("start health server: %w", err)
 		}
