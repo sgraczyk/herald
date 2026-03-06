@@ -3,7 +3,6 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 )
 
@@ -79,12 +78,6 @@ func Load(path string) (*Config, error) {
 	}
 	if env := os.Getenv("LOG_LEVEL"); env != "" {
 		cfg.LogLevel = env
-	}
-
-	if cfg.SystemPrompt == "" {
-		slog.Info("system_prompt not set, using default")
-	} else if len(cfg.SystemPrompt) > 4000 {
-		slog.Warn("system_prompt is very long, may consume significant context window", slog.Int("length", len(cfg.SystemPrompt)))
 	}
 
 	if cfg.AllowedUserIDsEnv != "" {

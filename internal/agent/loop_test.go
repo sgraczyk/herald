@@ -395,6 +395,18 @@ func TestSelectMemoriesUnderLimit(t *testing.T) {
 	}
 }
 
+func TestBuildMessagesWithCustomPrompt(t *testing.T) {
+	custom := "You are a pirate assistant."
+	msgs := buildMessages(nil, nil, "hello", custom)
+
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if msgs[0].Content != custom {
+		t.Errorf("expected custom prompt %q, got %q", custom, msgs[0].Content)
+	}
+}
+
 func TestBuildMessagesWithoutMemories(t *testing.T) {
 	msgs := buildMessages(nil, nil, "hello", "")
 
