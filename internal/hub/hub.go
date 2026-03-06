@@ -16,14 +16,16 @@ type OutMessage struct {
 
 // Hub routes messages between the Telegram adapter and the agent loop.
 type Hub struct {
-	In  chan InMessage
-	Out chan OutMessage
+	In     chan InMessage
+	Out    chan OutMessage
+	Typing chan int64 // ChatID to send typing indicator for
 }
 
 // New creates a new Hub with buffered channels.
 func New() *Hub {
 	return &Hub{
-		In:  make(chan InMessage, 64),
-		Out: make(chan OutMessage, 64),
+		In:     make(chan InMessage, 64),
+		Out:    make(chan OutMessage, 64),
+		Typing: make(chan int64, 64),
 	}
 }
