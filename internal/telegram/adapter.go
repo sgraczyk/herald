@@ -106,20 +106,21 @@ func (a *Adapter) dispatchOut(ctx context.Context) {
 			a.stopTyping(msg.ChatID)
 
 			formatted := format.TelegramHTML(msg.Text)
-			_, err := a.bot.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID:    msg.ChatID,
-				Text:      formatted,
-				ParseMode: models.ParseModeHTML,
-			})
-			if err != nil {
-				// Fallback: send as plain text if HTML parsing fails.
-				log.Printf("send HTML message to chat %d failed, retrying as plain text: %v", msg.ChatID, err)
-				_, err = a.bot.SendMessage(ctx, &bot.SendMessageParams{
-					ChatID: msg.ChatID,
-					Text:   msg.Text,
+			for _, chunk := range format.Split(formatted, 4096) {
+				_, err := a.bot.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID:    msg.ChatID,
+					Text:      chunk,
+					ParseMode: models.ParseModeHTML,
 				})
 				if err != nil {
-					log.Printf("send message to chat %d: %v", msg.ChatID, err)
+					log.Printf("send HTML message to chat %d failed, retrying as plain text: %v", msg.ChatID, err)
+					_, err = a.bot.SendMessage(ctx, &bot.SendMessageParams{
+						ChatID: msg.ChatID,
+						Text:   chunk,
+					})
+					if err != nil {
+						log.Printf("send message to chat %d: %v", msg.ChatID, err)
+					}
 				}
 			}
 		}

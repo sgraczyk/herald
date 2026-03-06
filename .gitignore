@@ -20,3 +20,9 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Claude Spec First
+.claude/.csf/
+
+# Playwright
+.playwright-mcp/
