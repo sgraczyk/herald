@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/sgraczyk/herald/compare/v0.2.0...v0.2.1) (2026-03-06)
+
+
+### Bug Fixes
+
+* **agent:** prevent duplicate user message in LLM context ([#88](https://github.com/sgraczyk/herald/issues/88)) ([df1c62c](https://github.com/sgraczyk/herald/commit/df1c62c5e3161090281b1a88b146db3dea452b81))
+* **telegram:** reject empty whitelist at adapter construction ([#90](https://github.com/sgraczyk/herald/issues/90)) ([7756543](https://github.com/sgraczyk/herald/commit/7756543fd024e9f15a5a231939d05a709f1d9fb2))
+
 ## [0.2.0](https://github.com/sgraczyk/herald/compare/v0.1.2...v0.2.0) (2026-03-06)
 
 
