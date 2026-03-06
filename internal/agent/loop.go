@@ -52,6 +52,8 @@ func (l *Loop) Run(ctx context.Context) {
 	}
 }
 
+// handle routes commands to their handlers.
+// Keep in sync with knownCommands in telegram.Adapter (internal/telegram/adapter.go).
 func (l *Loop) handle(ctx context.Context, msg hub.InMessage) {
 	switch msg.Command {
 	case "/clear":

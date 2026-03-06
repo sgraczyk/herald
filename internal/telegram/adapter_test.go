@@ -52,6 +52,73 @@ func TestNewNegativeIDsFiltered(t *testing.T) {
 	}
 }
 
+func TestParseMessageUnknownCommandWithArgs(t *testing.T) {
+	in := parseMessage(1, 2, "/foo bar")
+	if in.Command != "/foo" {
+		t.Errorf("expected command /foo, got %q", in.Command)
+	}
+	if in.Text != "/foo bar" {
+		t.Errorf("expected text '/foo bar', got %q", in.Text)
+	}
+}
+
+func TestParseMessageUnknownCommandNoArgs(t *testing.T) {
+	in := parseMessage(1, 2, "/foo")
+	if in.Command != "/foo" {
+		t.Errorf("expected command /foo, got %q", in.Command)
+	}
+	if in.Text != "/foo" {
+		t.Errorf("expected text '/foo', got %q", in.Text)
+	}
+}
+
+func TestParseMessageKnownCommandWithArgs(t *testing.T) {
+	for _, tc := range []struct {
+		text    string
+		cmd     string
+		wantArg string
+	}{
+		{"/model claude", "/model", "claude"},
+		{"/remember I prefer Go", "/remember", "I prefer Go"},
+		{"/forget python", "/forget", "python"},
+	} {
+		in := parseMessage(1, 2, tc.text)
+		if in.Command != tc.cmd {
+			t.Errorf("%s: expected command %q, got %q", tc.text, tc.cmd, in.Command)
+		}
+		if in.Text != tc.wantArg {
+			t.Errorf("%s: expected text %q, got %q", tc.text, tc.wantArg, in.Text)
+		}
+	}
+}
+
+func TestParseMessageKnownCommandNoArgs(t *testing.T) {
+	in := parseMessage(1, 2, "/clear")
+	if in.Command != "/clear" {
+		t.Errorf("expected command /clear, got %q", in.Command)
+	}
+	if in.Text != "/clear" {
+		t.Errorf("expected text '/clear', got %q", in.Text)
+	}
+}
+
+func TestParseMessageRegularText(t *testing.T) {
+	in := parseMessage(1, 2, "hello world")
+	if in.Command != "" {
+		t.Errorf("expected empty command, got %q", in.Command)
+	}
+	if in.Text != "hello world" {
+		t.Errorf("expected text 'hello world', got %q", in.Text)
+	}
+}
+
+func TestParseMessageBotMentionSuffix(t *testing.T) {
+	in := parseMessage(1, 2, "/clear@herald_bot")
+	if in.Command != "/clear" {
+		t.Errorf("expected command /clear, got %q", in.Command)
+	}
+}
+
 func TestAllowedIDsMap(t *testing.T) {
 	a := &Adapter{
 		allowedIDs: map[int64]bool{111: true, 222: true},

@@ -14,6 +14,18 @@ import (
 	"github.com/sgraczyk/herald/internal/hub"
 )
 
+// knownCommands is the set of commands handled by the agent loop.
+// Keep in sync with the switch in agent.Loop.handle (internal/agent/loop.go).
+// Unknown commands keep full original text so the LLM sees the user's intent.
+var knownCommands = map[string]bool{
+	"/clear":    true,
+	"/model":    true,
+	"/status":   true,
+	"/remember": true,
+	"/forget":   true,
+	"/memories": true,
+}
+
 // Adapter connects Telegram to the Hub via long polling.
 type Adapter struct {
 	bot        *bot.Bot
@@ -84,24 +96,34 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 
+	in := parseMessage(chatID, userID, text)
+	a.hub.In <- in
+}
+
+// parseMessage builds an InMessage from raw text, extracting any command.
+// Known commands get only the argument portion in Text; unknown commands
+// keep the full original text so the LLM sees the user's intent.
+func parseMessage(chatID, userID int64, text string) hub.InMessage {
 	in := hub.InMessage{
 		ChatID: chatID,
 		UserID: userID,
 		Text:   text,
 	}
 
-	// Extract command.
 	if strings.HasPrefix(text, "/") {
 		parts := strings.SplitN(text, " ", 2)
 		// Strip @botname suffix from commands like /clear@herald_bot.
 		cmd := strings.SplitN(parts[0], "@", 2)[0]
 		in.Command = cmd
-		if len(parts) > 1 {
+		// Only strip the command prefix for known commands so their
+		// handlers receive the argument portion in Text. Unknown
+		// commands keep the full original text for the LLM.
+		if knownCommands[cmd] && len(parts) > 1 {
 			in.Text = strings.TrimSpace(parts[1])
 		}
 	}
 
-	a.hub.In <- in
+	return in
 }
 
 func (a *Adapter) dispatchOut(ctx context.Context) {
