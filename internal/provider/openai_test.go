@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -70,6 +71,39 @@ func TestOpenAIAPIError(t *testing.T) {
 	_, err := p.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}})
 	if err == nil {
 		t.Fatal("expected error for 429 response")
+	}
+}
+
+func TestOpenAIOversizedResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(strings.Repeat("x", maxResponseSize+1)))
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI("test", srv.URL, "model", "key")
+	_, err := p.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}})
+	if err == nil {
+		t.Fatal("expected error for oversized response")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("expected size limit error, got: %v", err)
+	}
+}
+
+func TestOpenAIOversizedErrorResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(strings.Repeat("x", maxResponseSize+1)))
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI("test", srv.URL, "model", "key")
+	_, err := p.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}})
+	if err == nil {
+		t.Fatal("expected error for oversized error response")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("expected size limit error, got: %v", err)
 	}
 }
 

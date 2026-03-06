@@ -9,6 +9,9 @@ import (
 	"net/http"
 )
 
+// maxResponseSize is the maximum allowed response body size (10 MB).
+const maxResponseSize = 10 << 20
+
 // OpenAI is an OpenAI-compatible HTTP provider.
 // Works with any API that implements the OpenAI chat completions endpoint
 // (Chutes.ai, Groq, Gemini, DeepSeek, etc.).
@@ -67,9 +70,12 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize+1))
 	if err != nil {
 		return "", fmt.Errorf("read response: %w", err)
+	}
+	if len(respBody) > maxResponseSize {
+		return "", fmt.Errorf("response body exceeds %d bytes limit", maxResponseSize)
 	}
 
 	if resp.StatusCode != http.StatusOK {
