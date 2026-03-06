@@ -142,7 +142,8 @@ herald.db (single file)
 
 - Keys: big-endian uint64 (auto-increment per bucket) — bbolt's `NextSequence()`
 - Values: JSON-encoded (messages: `{role, content, timestamp}`, memories: `{fact, source, timestamp}`)
-- Prune: after insert, iterate from start, delete oldest if count > 50
+- Messages: pruned after insert (oldest deleted if count > 50)
+- Memories: stored without limit; context injection capped at 50 (all explicit + most recent auto)
 - Clear: delete and recreate the chat bucket
 
 ## Deployment

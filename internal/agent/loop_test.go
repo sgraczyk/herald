@@ -336,8 +336,62 @@ func TestBuildMessagesWithMemories(t *testing.T) {
 	if len(msgs) != 3 {
 		t.Fatalf("expected 3 messages, got %d", len(msgs))
 	}
-	if !strings.Contains(msgs[0].Content, "prefers Go (explicit)") {
+	if !strings.Contains(msgs[0].Content, "prefers Go") {
 		t.Errorf("expected memories in system prompt, got %q", msgs[0].Content)
+	}
+}
+
+func TestSelectMemoriesExplicitPrioritized(t *testing.T) {
+	// Build more memories than maxContextMemories.
+	var memories []store.Memory
+	// Add 10 explicit memories.
+	for i := 0; i < 10; i++ {
+		memories = append(memories, store.Memory{Fact: fmt.Sprintf("explicit %d", i), Source: "explicit"})
+	}
+	// Add 60 auto memories (total 70 > maxContextMemories of 50).
+	for i := 0; i < 60; i++ {
+		memories = append(memories, store.Memory{Fact: fmt.Sprintf("auto %d", i), Source: "auto"})
+	}
+
+	selected := selectMemories(memories)
+
+	if len(selected) != maxContextMemories {
+		t.Fatalf("expected %d selected, got %d", maxContextMemories, len(selected))
+	}
+
+	// Count explicit vs auto in selection.
+	explicitCount := 0
+	autoCount := 0
+	for _, m := range selected {
+		if m.Source == "explicit" {
+			explicitCount++
+		} else {
+			autoCount++
+		}
+	}
+	if explicitCount != 10 {
+		t.Errorf("expected all 10 explicit memories, got %d", explicitCount)
+	}
+	if autoCount != 40 {
+		t.Errorf("expected 40 auto memories (50-10), got %d", autoCount)
+	}
+
+	// Auto memories should be the most recent (last 40 of 60).
+	lastAuto := selected[len(selected)-1]
+	if lastAuto.Fact != "auto 59" {
+		t.Errorf("expected most recent auto memory last, got %q", lastAuto.Fact)
+	}
+}
+
+func TestSelectMemoriesUnderLimit(t *testing.T) {
+	memories := []store.Memory{
+		{Fact: "fact 1", Source: "explicit"},
+		{Fact: "fact 2", Source: "auto"},
+	}
+
+	selected := selectMemories(memories)
+	if len(selected) != 2 {
+		t.Errorf("expected all memories when under limit, got %d", len(selected))
 	}
 }
 

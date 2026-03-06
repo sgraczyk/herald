@@ -10,8 +10,6 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-const maxMemories = 50
-
 var errFound = errors.New("found")
 
 // Memory represents a stored fact about the user.
@@ -40,11 +38,7 @@ func (d *DB) AddMemory(chatID int64, mem Memory) error {
 			return fmt.Errorf("marshal memory: %w", err)
 		}
 
-		if err := chat.Put(uint64Key(seq), data); err != nil {
-			return fmt.Errorf("put memory: %w", err)
-		}
-
-		return prune(chat, maxMemories)
+		return chat.Put(uint64Key(seq), data)
 	})
 }
 
