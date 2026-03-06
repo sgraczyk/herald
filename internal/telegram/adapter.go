@@ -179,7 +179,7 @@ func (a *Adapter) sendTypingAction(ctx context.Context, chatID int64) {
 		ChatID: chatID,
 		Action: models.ChatActionTyping,
 	})
-	if err != nil {
+	if err != nil && ctx.Err() == nil {
 		log.Printf("send typing action to chat %d: %v", chatID, err)
 	}
 }
