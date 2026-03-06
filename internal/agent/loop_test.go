@@ -276,19 +276,13 @@ func TestMemoriesCommandEmpty(t *testing.T) {
 }
 
 func TestAutoExtraction(t *testing.T) {
-	// Mock returns a conversation response first, then extraction JSON.
 	callCount := 0
-	mock := &mockProvider{name: "test"}
-	extractMock := &mockProvider{name: "test", response: `["prefers Go", "works at Acme"]`}
+	l, h, db := testLoop(t, &mockProvider{name: "test"})
 
-	l, h, db := testLoop(t, mock)
-
-	// Use a provider that returns different responses for main chat vs extraction.
 	l.provider = provider.LLMProvider(&sequentialProvider{
 		responses: []string{"Sure, I can help!", `["prefers Go", "works at Acme"]`},
 		callCount: &callCount,
 	})
-	_ = extractMock // silence unused
 
 	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "I prefer Go and I work at Acme"})
 

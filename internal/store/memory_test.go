@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -95,6 +96,34 @@ func TestHasMemory(t *testing.T) {
 	found, _ = db.HasMemory(1, "prefers Python")
 	if found {
 		t.Error("expected no match for different fact")
+	}
+}
+
+func TestMemoryPruning(t *testing.T) {
+	db := testDB(t)
+
+	// Fill beyond maxMemories.
+	for i := 0; i < maxMemories+10; i++ {
+		mem := Memory{Fact: fmt.Sprintf("fact %d", i), Source: "auto", Timestamp: time.Now()}
+		if err := db.AddMemory(1, mem); err != nil {
+			t.Fatalf("add memory %d: %v", i, err)
+		}
+	}
+
+	mems, err := db.ListMemories(1)
+	if err != nil {
+		t.Fatalf("list memories: %v", err)
+	}
+	if len(mems) != maxMemories {
+		t.Errorf("expected %d memories after pruning, got %d", maxMemories, len(mems))
+	}
+
+	// Oldest memories should have been pruned; newest should remain.
+	if mems[len(mems)-1].Fact != fmt.Sprintf("fact %d", maxMemories+9) {
+		t.Errorf("expected newest memory to be last, got %q", mems[len(mems)-1].Fact)
+	}
+	if mems[0].Fact != "fact 10" {
+		t.Errorf("expected oldest remaining memory to be 'fact 10', got %q", mems[0].Fact)
 	}
 }
 

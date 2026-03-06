@@ -2,12 +2,17 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
+
+const maxMemories = 50
+
+var errFound = errors.New("found")
 
 // Memory represents a stored fact about the user.
 type Memory struct {
@@ -35,7 +40,11 @@ func (d *DB) AddMemory(chatID int64, mem Memory) error {
 			return fmt.Errorf("marshal memory: %w", err)
 		}
 
-		return chat.Put(uint64Key(seq), data)
+		if err := chat.Put(uint64Key(seq), data); err != nil {
+			return fmt.Errorf("put memory: %w", err)
+		}
+
+		return prune(chat, maxMemories)
 	})
 }
 
@@ -109,16 +118,21 @@ func (d *DB) HasMemory(chatID int64, fact string) (bool, error) {
 			return nil
 		}
 
-		return chat.ForEach(func(k, v []byte) error {
+		err := chat.ForEach(func(k, v []byte) error {
 			var mem Memory
 			if err := json.Unmarshal(v, &mem); err != nil {
 				return fmt.Errorf("unmarshal memory: %w", err)
 			}
 			if strings.ToLower(mem.Fact) == lower {
 				found = true
+				return errFound
 			}
 			return nil
 		})
+		if errors.Is(err, errFound) {
+			return nil
+		}
+		return err
 	})
 
 	return found, err

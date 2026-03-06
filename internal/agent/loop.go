@@ -236,6 +236,7 @@ Assistant: %s`
 func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assistantText string) {
 	prompt := fmt.Sprintf(extractionPrompt, userText, assistantText)
 	msgs := []provider.Message{
+		{Role: "system", Content: "Extract facts as a JSON array of short strings. Return only valid JSON, no explanation."},
 		{Role: "user", Content: prompt},
 	}
 
