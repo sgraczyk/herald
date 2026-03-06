@@ -201,7 +201,7 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o herald ./cmd/herald
 
 ## CI/CD
 
-Three GitHub Actions workflows in `.github/workflows/`:
+Two GitHub Actions workflows in `.github/workflows/`:
 
 **CI** (`ci.yml`) — runs on push/PR to `main`:
 - **lint:** `go vet ./...` + `staticcheck` (via `dominikh/staticcheck-action`)
@@ -212,11 +212,8 @@ Three GitHub Actions workflows in `.github/workflows/`:
 - Uses `googleapis/release-please-action@v4` to create/update Release PRs
 - Parses conventional commits to determine version bump and generate CHANGELOG.md
 - On merge of Release PR, creates a GitHub Release with the correct tag
-
-**Release** (`release.yml`) — runs on `release: published` (triggered by release-please):
-- Builds `linux/amd64` static binary with `-trimpath -ldflags="-s -w"`
-- Injects version from release tag via `-X main.version`
-- Attaches binary to the GitHub Release created by release-please
+- **build** job (conditional): builds `linux/amd64` static binary and attaches it to the release
+- Build runs in the same workflow to avoid the `GITHUB_TOKEN` cross-workflow trigger limitation
 
 ## Release Process
 
