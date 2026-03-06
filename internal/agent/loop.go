@@ -177,16 +177,6 @@ func (l *Loop) handleMemories(msg hub.InMessage) {
 }
 
 func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
-	// Save user message.
-	userMsg := provider.Message{
-		Role:      "user",
-		Content:   msg.Text,
-		Timestamp: time.Now(),
-	}
-	if err := l.store.Append(msg.ChatID, userMsg, l.historyLimit); err != nil {
-		slog.Error("save user message failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
-	}
-
 	// Load history and memories.
 	history, err := l.store.List(msg.ChatID)
 	if err != nil {
@@ -216,6 +206,16 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		}
 		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
 		return
+	}
+
+	// Save user message.
+	userMsg := provider.Message{
+		Role:      "user",
+		Content:   msg.Text,
+		Timestamp: time.Now(),
+	}
+	if err := l.store.Append(msg.ChatID, userMsg, l.historyLimit); err != nil {
+		slog.Error("save user message failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 	}
 
 	// Save assistant response.
