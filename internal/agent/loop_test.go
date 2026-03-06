@@ -434,6 +434,88 @@ func (s *sequentialProvider) Chat(_ context.Context, _ []provider.Message) (stri
 	return "[]", nil
 }
 
+// capturingProvider records the messages it receives.
+type capturingProvider struct {
+	responses []string
+	callCount int
+	captured  [][]provider.Message
+}
+
+func (c *capturingProvider) Name() string { return "test" }
+func (c *capturingProvider) Chat(_ context.Context, msgs []provider.Message) (string, error) {
+	cp := make([]provider.Message, len(msgs))
+	copy(cp, msgs)
+	c.captured = append(c.captured, cp)
+	idx := c.callCount
+	c.callCount++
+	if idx < len(c.responses) {
+		return c.responses[idx], nil
+	}
+	return "[]", nil
+}
+
+func TestHandleMessageNoDuplicateUserMessage(t *testing.T) {
+	cap := &capturingProvider{responses: []string{"response", "[]"}}
+	l, h, db := testLoop(t, cap)
+	l.provider = cap
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hello"})
+	readOut(t, h)
+
+	// The first call to Chat is the main conversation call.
+	if len(cap.captured) == 0 {
+		t.Fatal("provider was never called")
+	}
+	msgs := cap.captured[0]
+
+	// Count how many times the user message "hello" appears.
+	count := 0
+	for _, m := range msgs {
+		if m.Role == "user" && m.Content == "hello" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected user message 'hello' exactly once, found %d times", count)
+	}
+
+	// Verify it's stored exactly once in the DB.
+	stored, _ := db.List(1)
+	userCount := 0
+	for _, m := range stored {
+		if m.Role == "user" && m.Content == "hello" {
+			userCount++
+		}
+	}
+	if userCount != 1 {
+		t.Errorf("expected 1 user message in store, got %d", userCount)
+	}
+}
+
+func TestHandleMessageNoDuplicateWithHistory(t *testing.T) {
+	cap := &capturingProvider{responses: []string{"response", "[]"}}
+	l, h, db := testLoop(t, cap)
+	l.provider = cap
+
+	// Pre-populate history.
+	_ = db.Append(1, provider.Message{Role: "user", Content: "previous"}, 50)
+	_ = db.Append(1, provider.Message{Role: "assistant", Content: "previous reply"}, 50)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "new message"})
+	readOut(t, h)
+
+	msgs := cap.captured[0]
+	count := 0
+	for _, m := range msgs {
+		if m.Role == "user" && m.Content == "new message" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected user message 'new message' exactly once, found %d times", count)
+	}
+}
+
 func TestUnknownCommandPassesToLLM(t *testing.T) {
 	mock := &mockProvider{name: "test", response: "I don't know that command."}
 	l, h, _ := testLoop(t, mock)
