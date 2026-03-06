@@ -75,7 +75,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			slog.Error("health server error", "error", err)
+			slog.Error("health server error", slog.String("error", err.Error()))
 		}
 	}()
 

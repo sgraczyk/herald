@@ -275,7 +275,7 @@ func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assi
 
 		exists, err := l.store.HasMemory(chatID, fact)
 		if err != nil {
-			slog.Debug("check memory exists failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+			slog.Warn("check memory exists failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 			continue
 		}
 		if exists {
@@ -288,7 +288,7 @@ func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assi
 			Timestamp: time.Now(),
 		}
 		if err := l.store.AddMemory(chatID, mem); err != nil {
-			slog.Debug("save extracted memory failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+			slog.Warn("save extracted memory failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 		}
 	}
 }
