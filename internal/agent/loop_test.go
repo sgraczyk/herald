@@ -35,7 +35,7 @@ func testLoop(t *testing.T, p provider.LLMProvider) (*Loop, *hub.Hub, *store.DB)
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	l := NewLoop(h, p, db, 50)
+	l := NewLoop(h, p, db, 50, "")
 	return l, h, db
 }
 
@@ -331,7 +331,7 @@ func TestBuildMessagesWithMemories(t *testing.T) {
 		{Fact: "prefers Go", Source: "explicit"},
 	}
 
-	msgs := buildMessages(history, memories, "hello")
+	msgs := buildMessages(history, memories, "hello", "")
 
 	if len(msgs) != 3 {
 		t.Fatalf("expected 3 messages, got %d", len(msgs))
@@ -396,7 +396,7 @@ func TestSelectMemoriesUnderLimit(t *testing.T) {
 }
 
 func TestBuildMessagesWithoutMemories(t *testing.T) {
-	msgs := buildMessages(nil, nil, "hello")
+	msgs := buildMessages(nil, nil, "hello", "")
 
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(msgs))

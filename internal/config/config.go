@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 )
 
@@ -13,6 +14,7 @@ type Config struct {
 	HTTPPort       int              `json:"http_port,omitempty"`
 	HistoryLimit   int              `json:"history_limit"`
 	LogLevel       string           `json:"log_level"`
+	SystemPrompt   string           `json:"system_prompt,omitempty"`
 	AllowedUserIDs []int64          `json:"-"`
 
 	// Raw field for env var resolution.
@@ -77,6 +79,12 @@ func Load(path string) (*Config, error) {
 	}
 	if env := os.Getenv("LOG_LEVEL"); env != "" {
 		cfg.LogLevel = env
+	}
+
+	if cfg.SystemPrompt == "" {
+		slog.Info("system_prompt not set, using default")
+	} else if len(cfg.SystemPrompt) > 4000 {
+		slog.Warn("system_prompt is very long, may consume significant context window", slog.Int("length", len(cfg.SystemPrompt)))
 	}
 
 	if cfg.AllowedUserIDsEnv != "" {

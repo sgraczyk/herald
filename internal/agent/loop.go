@@ -20,16 +20,19 @@ type Loop struct {
 	provider     provider.LLMProvider
 	store        *store.DB
 	historyLimit int
+	systemPrompt string
 	startTime    time.Time
 }
 
-// NewLoop creates a new agent loop.
-func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit int) *Loop {
+// NewLoop creates a new agent loop. If systemPrompt is empty, the default
+// hardcoded prompt is used.
+func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit int, systemPrompt string) *Loop {
 	return &Loop{
 		hub:          h,
 		provider:     p,
 		store:        s,
 		historyLimit: historyLimit,
+		systemPrompt: systemPrompt,
 		startTime:    time.Now(),
 	}
 }
@@ -198,7 +201,7 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	l.hub.Typing <- msg.ChatID
 
 	// Build messages and call provider.
-	messages := buildMessages(history, memories, msg.Text)
+	messages := buildMessages(history, memories, msg.Text, l.systemPrompt)
 	response, err := l.provider.Chat(ctx, messages)
 	if err != nil {
 		slog.Error("provider call failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
