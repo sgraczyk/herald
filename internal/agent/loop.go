@@ -194,6 +194,9 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		log.Printf("load memories: %v", err)
 	}
 
+	// Signal typing indicator before calling the provider.
+	l.hub.Typing <- msg.ChatID
+
 	// Build messages and call provider.
 	messages := buildMessages(history, memories, msg.Text)
 	response, err := l.provider.Chat(ctx, messages)
