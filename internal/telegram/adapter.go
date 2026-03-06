@@ -15,6 +15,7 @@ import (
 )
 
 // knownCommands is the set of commands handled by the agent loop.
+// Keep in sync with the switch in agent.Loop.handle (internal/agent/loop.go).
 // Unknown commands keep full original text so the LLM sees the user's intent.
 var knownCommands = map[string]bool{
 	"/clear":    true,
