@@ -228,7 +228,12 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	l.extractMemories(ctx, msg.ChatID, msg.Text, response)
 }
 
-const extractionPrompt = `Extract any notable facts, preferences, or personal details about the user from this exchange. Return ONLY a JSON array of short strings, or an empty array [] if there is nothing worth remembering.
+const extractionPrompt = `Extract notable facts, preferences, or personal details about the user from this exchange. Return ONLY a JSON array of short factual strings, or an empty array [] if nothing is worth remembering.
+
+Rules:
+- Only extract durable facts (preferences, background, habits), not transient conversation topics
+- Keep each fact short and canonical (e.g., "prefers Go" not "the user mentioned they like Go")
+- Do NOT extract what the assistant said, only what reveals something about the user
 
 User: %s
 Assistant: %s`
