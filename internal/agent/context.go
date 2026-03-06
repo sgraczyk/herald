@@ -8,7 +8,7 @@ import (
 	"github.com/sgraczyk/herald/internal/store"
 )
 
-const systemPrompt = `You are Herald, a helpful AI assistant on Telegram. Be concise and direct. Respond in the same language the user writes in.
+const defaultSystemPrompt = `You are Herald, a helpful AI assistant on Telegram. Be concise and direct. Respond in the same language the user writes in.
 
 Formatting rules for Telegram:
 - Never use markdown tables. Present tabular data as bullet lists or key-value pairs.
@@ -23,11 +23,14 @@ const maxContextMemories = 50
 
 // buildMessages assembles the full message list for the provider:
 // system prompt (with memories) + conversation history + current user message.
-func buildMessages(history []provider.Message, memories []store.Memory, userText string) []provider.Message {
+func buildMessages(history []provider.Message, memories []store.Memory, userText string, customPrompt string) []provider.Message {
 	msgs := make([]provider.Message, 0, len(history)+2)
 
 	selected := selectMemories(memories)
-	prompt := systemPrompt
+	prompt := defaultSystemPrompt
+	if customPrompt != "" {
+		prompt = customPrompt
+	}
 	if len(selected) > 0 {
 		var b strings.Builder
 		b.WriteString(prompt)

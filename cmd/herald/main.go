@@ -76,6 +76,12 @@ func serve(configPath string) error {
 
 	initLogging(cfg.LogLevel)
 
+	if cfg.SystemPrompt == "" {
+		slog.Info("system_prompt not set, using default")
+	} else if len(cfg.SystemPrompt) > 4000 {
+		slog.Warn("system_prompt is very long, may consume significant context window", slog.Int("length", len(cfg.SystemPrompt)))
+	}
+
 	if cfg.Telegram.Token == "" {
 		return fmt.Errorf("telegram token not set (env var: %s)", cfg.Telegram.TokenEnv)
 	}
@@ -98,7 +104,7 @@ func serve(configPath string) error {
 	h := hub.New()
 
 	// Create agent loop.
-	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit)
+	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.SystemPrompt)
 
 	// Create Telegram adapter.
 	tg, err := telegram.New(cfg.Telegram.Token, h, cfg.AllowedUserIDs)

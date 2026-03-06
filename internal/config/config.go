@@ -13,6 +13,7 @@ type Config struct {
 	HTTPPort       int              `json:"http_port,omitempty"`
 	HistoryLimit   int              `json:"history_limit"`
 	LogLevel       string           `json:"log_level"`
+	SystemPrompt   string           `json:"system_prompt,omitempty"`
 	AllowedUserIDs []int64          `json:"-"`
 
 	// Raw field for env var resolution.
