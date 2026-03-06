@@ -2,9 +2,11 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/sgraczyk/herald/internal/hub"
@@ -55,6 +57,12 @@ func (l *Loop) handle(ctx context.Context, msg hub.InMessage) {
 		l.handleStatus(msg)
 	case "/model":
 		l.handleModel(msg)
+	case "/remember":
+		l.handleRemember(msg)
+	case "/forget":
+		l.handleForget(msg)
+	case "/memories":
+		l.handleMemories(msg)
 	default:
 		l.handleMessage(ctx, msg)
 	}
@@ -107,6 +115,64 @@ func (l *Loop) handleModel(msg hub.InMessage) {
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: text}
 }
 
+func (l *Loop) handleRemember(msg hub.InMessage) {
+	if msg.Text == "" {
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Usage: /remember <fact>"}
+		return
+	}
+
+	mem := store.Memory{
+		Fact:      msg.Text,
+		Source:    "explicit",
+		Timestamp: time.Now(),
+	}
+	if err := l.store.AddMemory(msg.ChatID, mem); err != nil {
+		log.Printf("add memory chat %d: %v", msg.ChatID, err)
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to save memory."}
+		return
+	}
+	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: fmt.Sprintf("Remembered: %s", msg.Text)}
+}
+
+func (l *Loop) handleForget(msg hub.InMessage) {
+	if msg.Text == "" {
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Usage: /forget <fact>"}
+		return
+	}
+
+	removed, err := l.store.RemoveMemory(msg.ChatID, msg.Text)
+	if err != nil {
+		log.Printf("remove memory chat %d: %v", msg.ChatID, err)
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to remove memory."}
+		return
+	}
+	if !removed {
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "No matching memory found."}
+		return
+	}
+	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Memory removed."}
+}
+
+func (l *Loop) handleMemories(msg hub.InMessage) {
+	mems, err := l.store.ListMemories(msg.ChatID)
+	if err != nil {
+		log.Printf("list memories chat %d: %v", msg.ChatID, err)
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to list memories."}
+		return
+	}
+	if len(mems) == 0 {
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "No memories stored."}
+		return
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Memories (%d):\n", len(mems))
+	for _, m := range mems {
+		fmt.Fprintf(&b, "- %s [%s]\n", m.Fact, m.Source)
+	}
+	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: b.String()}
+}
+
 func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	// Save user message.
 	userMsg := provider.Message{
@@ -118,14 +184,18 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		log.Printf("save user message: %v", err)
 	}
 
-	// Load history.
+	// Load history and memories.
 	history, err := l.store.List(msg.ChatID)
 	if err != nil {
 		log.Printf("load history: %v", err)
 	}
+	memories, err := l.store.ListMemories(msg.ChatID)
+	if err != nil {
+		log.Printf("load memories: %v", err)
+	}
 
 	// Build messages and call provider.
-	messages := buildMessages(history, msg.Text)
+	messages := buildMessages(history, memories, msg.Text)
 	response, err := l.provider.Chat(ctx, messages)
 	if err != nil {
 		log.Printf("provider error: %v", err)
@@ -153,4 +223,69 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	}
 
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: response}
+
+	// Extract memories from the conversation turn.
+	l.extractMemories(ctx, msg.ChatID, msg.Text, response)
+}
+
+const extractionPrompt = `Extract notable facts, preferences, or personal details about the user from this exchange. Return ONLY a JSON array of short factual strings, or an empty array [] if nothing is worth remembering.
+
+Rules:
+- Only extract durable facts (preferences, background, habits), not transient conversation topics
+- Keep each fact short and canonical (e.g., "prefers Go" not "the user mentioned they like Go")
+- Do NOT extract what the assistant said, only what reveals something about the user
+
+User: %s
+Assistant: %s`
+
+func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assistantText string) {
+	prompt := fmt.Sprintf(extractionPrompt, userText, assistantText)
+	msgs := []provider.Message{
+		{Role: "system", Content: "Extract facts as a JSON array of short strings. Return only valid JSON, no explanation."},
+		{Role: "user", Content: prompt},
+	}
+
+	resp, err := l.provider.Chat(ctx, msgs)
+	if err != nil {
+		log.Printf("extract memories: %v", err)
+		return
+	}
+
+	// Parse JSON array from response. The LLM may wrap it in markdown fences.
+	resp = strings.TrimSpace(resp)
+	resp = strings.TrimPrefix(resp, "```json")
+	resp = strings.TrimPrefix(resp, "```")
+	resp = strings.TrimSuffix(resp, "```")
+	resp = strings.TrimSpace(resp)
+
+	var facts []string
+	if err := json.Unmarshal([]byte(resp), &facts); err != nil {
+		log.Printf("parse extracted memories: %v (response: %q)", err, resp)
+		return
+	}
+
+	for _, fact := range facts {
+		fact = strings.TrimSpace(fact)
+		if fact == "" {
+			continue
+		}
+
+		exists, err := l.store.HasMemory(chatID, fact)
+		if err != nil {
+			log.Printf("check memory exists: %v", err)
+			continue
+		}
+		if exists {
+			continue
+		}
+
+		mem := store.Memory{
+			Fact:      fact,
+			Source:    "auto",
+			Timestamp: time.Now(),
+		}
+		if err := l.store.AddMemory(chatID, mem); err != nil {
+			log.Printf("save extracted memory: %v", err)
+		}
+	}
 }

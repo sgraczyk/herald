@@ -95,6 +95,7 @@ internal/
   store/
     db.go                    # bbolt init (go.etcd.io/bbolt, pure Go)
     history.go               # Conversation history per chat (bucket per chat_id)
+    memory.go                # Long-term memory per chat (facts, preferences)
 config.json.example
 .env.example
 go.mod
@@ -131,12 +132,18 @@ herald.db (single file)
 │   │   ├── 00000002 → {"role":"assistant","content":"...","timestamp":"..."}
 │   │   └── ...            # Sequential uint64 keys (big-endian, naturally sorted)
 │   └── <chat_id>/         # ... more chats
-└── metadata/              # Stretch: long-term memory, cron state
+├── memories/              # Long-term memory bucket
+│   ├── <chat_id>/         # Nested bucket per chat
+│   │   ├── 00000001 → {"fact":"...","source":"explicit|auto","timestamp":"..."}
+│   │   └── ...            # Sequential uint64 keys
+│   └── <chat_id>/         # ... more chats
+└── metadata/              # Stretch: cron state, settings
 ```
 
 - Keys: big-endian uint64 (auto-increment per bucket) — bbolt's `NextSequence()`
-- Values: JSON-encoded `{role, content, timestamp}`
-- Prune: after insert, iterate from start, delete oldest if count > 50
+- Values: JSON-encoded (messages: `{role, content, timestamp}`, memories: `{fact, source, timestamp}`)
+- Messages: pruned after insert (oldest deleted if count > 50)
+- Memories: stored without limit; context injection capped at 50 (all explicit + most recent auto)
 - Clear: delete and recreate the chat bucket
 
 ## Deployment

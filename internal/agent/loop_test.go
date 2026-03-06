@@ -182,6 +182,246 @@ func TestHandleMessageErrorGeneric(t *testing.T) {
 	}
 }
 
+func TestRememberCommand(t *testing.T) {
+	mock := &mockProvider{name: "test"}
+	l, h, db := testLoop(t, mock)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Command: "/remember", Text: "I prefer Go"})
+
+	out := readOut(t, h)
+	if out.Text != "Remembered: I prefer Go" {
+		t.Errorf("expected confirmation, got %q", out.Text)
+	}
+
+	mems, _ := db.ListMemories(1)
+	if len(mems) != 1 || mems[0].Fact != "I prefer Go" || mems[0].Source != "explicit" {
+		t.Errorf("unexpected memories: %+v", mems)
+	}
+}
+
+func TestRememberCommandEmpty(t *testing.T) {
+	mock := &mockProvider{name: "test"}
+	l, h, _ := testLoop(t, mock)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Command: "/remember", Text: ""})
+
+	out := readOut(t, h)
+	if !strings.Contains(out.Text, "Usage") {
+		t.Errorf("expected usage message, got %q", out.Text)
+	}
+}
+
+func TestForgetCommand(t *testing.T) {
+	mock := &mockProvider{name: "test"}
+	l, h, db := testLoop(t, mock)
+
+	db.AddMemory(1, store.Memory{Fact: "prefers Go over Python", Source: "explicit"})
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Command: "/forget", Text: "python"})
+
+	out := readOut(t, h)
+	if out.Text != "Memory removed." {
+		t.Errorf("expected removal confirmation, got %q", out.Text)
+	}
+
+	mems, _ := db.ListMemories(1)
+	if len(mems) != 0 {
+		t.Errorf("expected 0 memories after forget, got %d", len(mems))
+	}
+}
+
+func TestForgetCommandNoMatch(t *testing.T) {
+	mock := &mockProvider{name: "test"}
+	l, h, _ := testLoop(t, mock)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Command: "/forget", Text: "nonexistent"})
+
+	out := readOut(t, h)
+	if out.Text != "No matching memory found." {
+		t.Errorf("expected no match message, got %q", out.Text)
+	}
+}
+
+func TestMemoriesCommand(t *testing.T) {
+	mock := &mockProvider{name: "test"}
+	l, h, db := testLoop(t, mock)
+
+	db.AddMemory(1, store.Memory{Fact: "prefers Go", Source: "explicit"})
+	db.AddMemory(1, store.Memory{Fact: "lives in Warsaw", Source: "auto"})
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Command: "/memories"})
+
+	out := readOut(t, h)
+	if !strings.Contains(out.Text, "Memories (2)") {
+		t.Errorf("expected memory count, got %q", out.Text)
+	}
+	if !strings.Contains(out.Text, "prefers Go [explicit]") {
+		t.Errorf("expected explicit memory, got %q", out.Text)
+	}
+	if !strings.Contains(out.Text, "lives in Warsaw [auto]") {
+		t.Errorf("expected auto memory, got %q", out.Text)
+	}
+}
+
+func TestMemoriesCommandEmpty(t *testing.T) {
+	mock := &mockProvider{name: "test"}
+	l, h, _ := testLoop(t, mock)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Command: "/memories"})
+
+	out := readOut(t, h)
+	if out.Text != "No memories stored." {
+		t.Errorf("expected empty message, got %q", out.Text)
+	}
+}
+
+func TestAutoExtraction(t *testing.T) {
+	callCount := 0
+	l, h, db := testLoop(t, &mockProvider{name: "test"})
+
+	l.provider = provider.LLMProvider(&sequentialProvider{
+		responses: []string{"Sure, I can help!", `["prefers Go", "works at Acme"]`},
+		callCount: &callCount,
+	})
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "I prefer Go and I work at Acme"})
+
+	out := readOut(t, h)
+	if out.Text != "Sure, I can help!" {
+		t.Errorf("expected chat response, got %q", out.Text)
+	}
+
+	mems, _ := db.ListMemories(1)
+	if len(mems) != 2 {
+		t.Fatalf("expected 2 auto-extracted memories, got %d", len(mems))
+	}
+	for _, m := range mems {
+		if m.Source != "auto" {
+			t.Errorf("expected auto source, got %q", m.Source)
+		}
+	}
+}
+
+func TestAutoExtractionDedup(t *testing.T) {
+	callCount := 0
+	l, h, db := testLoop(t, &mockProvider{name: "test"})
+
+	// Pre-store a memory.
+	db.AddMemory(1, store.Memory{Fact: "prefers Go", Source: "explicit"})
+
+	l.provider = provider.LLMProvider(&sequentialProvider{
+		responses: []string{"OK!", `["prefers Go"]`},
+		callCount: &callCount,
+	})
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "I prefer Go"})
+	readOut(t, h)
+
+	mems, _ := db.ListMemories(1)
+	if len(mems) != 1 {
+		t.Errorf("expected 1 memory (deduped), got %d", len(mems))
+	}
+}
+
+func TestBuildMessagesWithMemories(t *testing.T) {
+	history := []provider.Message{
+		{Role: "user", Content: "hi"},
+	}
+	memories := []store.Memory{
+		{Fact: "prefers Go", Source: "explicit"},
+	}
+
+	msgs := buildMessages(history, memories, "hello")
+
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(msgs))
+	}
+	if !strings.Contains(msgs[0].Content, "prefers Go") {
+		t.Errorf("expected memories in system prompt, got %q", msgs[0].Content)
+	}
+}
+
+func TestSelectMemoriesExplicitPrioritized(t *testing.T) {
+	// Build more memories than maxContextMemories.
+	var memories []store.Memory
+	// Add 10 explicit memories.
+	for i := 0; i < 10; i++ {
+		memories = append(memories, store.Memory{Fact: fmt.Sprintf("explicit %d", i), Source: "explicit"})
+	}
+	// Add 60 auto memories (total 70 > maxContextMemories of 50).
+	for i := 0; i < 60; i++ {
+		memories = append(memories, store.Memory{Fact: fmt.Sprintf("auto %d", i), Source: "auto"})
+	}
+
+	selected := selectMemories(memories)
+
+	if len(selected) != maxContextMemories {
+		t.Fatalf("expected %d selected, got %d", maxContextMemories, len(selected))
+	}
+
+	// Count explicit vs auto in selection.
+	explicitCount := 0
+	autoCount := 0
+	for _, m := range selected {
+		if m.Source == "explicit" {
+			explicitCount++
+		} else {
+			autoCount++
+		}
+	}
+	if explicitCount != 10 {
+		t.Errorf("expected all 10 explicit memories, got %d", explicitCount)
+	}
+	if autoCount != 40 {
+		t.Errorf("expected 40 auto memories (50-10), got %d", autoCount)
+	}
+
+	// Auto memories should be the most recent (last 40 of 60).
+	lastAuto := selected[len(selected)-1]
+	if lastAuto.Fact != "auto 59" {
+		t.Errorf("expected most recent auto memory last, got %q", lastAuto.Fact)
+	}
+}
+
+func TestSelectMemoriesUnderLimit(t *testing.T) {
+	memories := []store.Memory{
+		{Fact: "fact 1", Source: "explicit"},
+		{Fact: "fact 2", Source: "auto"},
+	}
+
+	selected := selectMemories(memories)
+	if len(selected) != 2 {
+		t.Errorf("expected all memories when under limit, got %d", len(selected))
+	}
+}
+
+func TestBuildMessagesWithoutMemories(t *testing.T) {
+	msgs := buildMessages(nil, nil, "hello")
+
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if strings.Contains(msgs[0].Content, "You know the following") {
+		t.Error("expected no memory section in system prompt")
+	}
+}
+
+// sequentialProvider returns different responses for each call.
+type sequentialProvider struct {
+	responses []string
+	callCount *int
+}
+
+func (s *sequentialProvider) Name() string { return "test" }
+func (s *sequentialProvider) Chat(_ context.Context, _ []provider.Message) (string, error) {
+	idx := *s.callCount
+	*s.callCount++
+	if idx < len(s.responses) {
+		return s.responses[idx], nil
+	}
+	return "[]", nil
+}
+
 func TestUnknownCommandPassesToLLM(t *testing.T) {
 	mock := &mockProvider{name: "test", response: "I don't know that command."}
 	l, h, _ := testLoop(t, mock)
