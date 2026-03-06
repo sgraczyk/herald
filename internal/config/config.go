@@ -12,6 +12,7 @@ type Config struct {
 	Store          StoreConfig      `json:"store"`
 	HTTPPort       int              `json:"http_port,omitempty"`
 	HistoryLimit   int              `json:"history_limit"`
+	LogLevel       string           `json:"log_level"`
 	AllowedUserIDs []int64          `json:"-"`
 
 	// Raw field for env var resolution.
@@ -69,6 +70,13 @@ func Load(path string) (*Config, error) {
 		if cfg.Providers[i].APIKeyEnv != "" {
 			cfg.Providers[i].APIKey = os.Getenv(cfg.Providers[i].APIKeyEnv)
 		}
+	}
+
+	if cfg.LogLevel == "" {
+		cfg.LogLevel = "info"
+	}
+	if env := os.Getenv("LOG_LEVEL"); env != "" {
+		cfg.LogLevel = env
 	}
 
 	if cfg.AllowedUserIDsEnv != "" {

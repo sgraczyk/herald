@@ -20,5 +20,6 @@
   },
   "http_port": 8080,
   "history_limit": 50,
+  "log_level": "info",
   "allowed_user_ids_env": "ALLOWED_USER_IDS"
 }

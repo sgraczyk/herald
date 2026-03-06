@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -42,11 +43,38 @@ func main() {
 	}
 }
 
+func initLogging(levelStr string) {
+	var level slog.Level
+	switch strings.ToLower(levelStr) {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn", "warning":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	opts := &slog.HandlerOptions{Level: level}
+
+	var handler slog.Handler
+	fi, err := os.Stderr.Stat()
+	if err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		handler = slog.NewTextHandler(os.Stderr, opts)
+	} else {
+		handler = slog.NewJSONHandler(os.Stderr, opts)
+	}
+	slog.SetDefault(slog.New(handler))
+}
+
 func serve(configPath string) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+
+	initLogging(cfg.LogLevel)
 
 	if cfg.Telegram.Token == "" {
 		return fmt.Errorf("telegram token not set (env var: %s)", cfg.Telegram.TokenEnv)
@@ -87,7 +115,7 @@ func serve(configPath string) error {
 		tokenExpires := os.Getenv("CLAUDE_TOKEN_EXPIRES")
 		if tokenExpires != "" {
 			if _, err := time.Parse("2006-01-02", tokenExpires); err != nil {
-				log.Printf("warning: invalid CLAUDE_TOKEN_EXPIRES %q, ignoring", tokenExpires)
+				slog.Warn("invalid CLAUDE_TOKEN_EXPIRES, ignoring", slog.String("value", tokenExpires))
 				tokenExpires = ""
 			}
 		}
@@ -102,17 +130,17 @@ func serve(configPath string) error {
 		if err := srv.Start(ctx); err != nil {
 			return fmt.Errorf("start health server: %w", err)
 		}
-		log.Printf("health endpoint on :%d", cfg.HTTPPort)
+		slog.Info("health endpoint started", slog.Int("port", cfg.HTTPPort))
 	}
 
 	// Start agent loop.
 	go loop.Run(ctx)
 
-	log.Printf("herald %s starting (provider: %s)", version, chain.Name())
+	slog.Info("herald starting", slog.String("version", version), slog.String("provider", chain.Name()))
 
 	// Start Telegram (blocks until ctx cancelled).
 	tg.Start(ctx)
 
-	log.Println("herald stopped")
+	slog.Info("herald stopped")
 	return nil
 }

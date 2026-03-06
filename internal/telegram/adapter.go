@@ -3,7 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -68,7 +68,7 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 
 	// Reject unauthorized users.
 	if len(a.allowedIDs) > 0 && !a.allowedIDs[userID] {
-		log.Printf("rejected message from unauthorized user %d", userID)
+		slog.Warn("rejected message from unauthorized user", slog.Int64("user_id", userID))
 		return
 	}
 
@@ -113,13 +113,13 @@ func (a *Adapter) dispatchOut(ctx context.Context) {
 					ParseMode: models.ParseModeHTML,
 				})
 				if err != nil {
-					log.Printf("send HTML message to chat %d failed, retrying as plain text: %v", msg.ChatID, err)
+					slog.Warn("send HTML message failed, retrying as plain text", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 					_, err = a.bot.SendMessage(ctx, &bot.SendMessageParams{
 						ChatID: msg.ChatID,
 						Text:   chunk,
 					})
 					if err != nil {
-						log.Printf("send message to chat %d: %v", msg.ChatID, err)
+						slog.Error("send message failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 					}
 				}
 			}
@@ -181,6 +181,6 @@ func (a *Adapter) sendTypingAction(ctx context.Context, chatID int64) {
 		Action: models.ChatActionTyping,
 	})
 	if err != nil && ctx.Err() == nil {
-		log.Printf("send typing action to chat %d: %v", chatID, err)
+		slog.Debug("send typing action failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 	}
 }
