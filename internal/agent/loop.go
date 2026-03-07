@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sgraczyk/herald/internal/hub"
@@ -18,10 +19,12 @@ import (
 type Loop struct {
 	hub          *hub.Hub
 	provider     provider.LLMProvider
+	extProvider  provider.LLMProvider // provider used for memory extraction
 	store        *store.DB
 	historyLimit int
 	systemPrompt string
 	startTime    time.Time
+	wg           sync.WaitGroup
 }
 
 // NewLoop creates a new agent loop. If systemPrompt is empty, the default
@@ -30,6 +33,7 @@ func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit int, 
 	return &Loop{
 		hub:          h,
 		provider:     p,
+		extProvider:  pickExtractionProvider(p),
 		store:        s,
 		historyLimit: historyLimit,
 		systemPrompt: systemPrompt,
@@ -37,18 +41,54 @@ func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit int, 
 	}
 }
 
+// pickExtractionProvider selects the provider to use for background memory
+// extraction. It prefers an OpenAI-compatible HTTP provider over claude -p
+// to avoid spawning a second Node.js process on limited RAM.
+func pickExtractionProvider(p provider.LLMProvider) provider.LLMProvider {
+	fb, ok := p.(*provider.Fallback)
+	if !ok {
+		return p
+	}
+	for _, pp := range fb.Providers() {
+		if _, ok := pp.(*provider.OpenAI); ok {
+			return pp
+		}
+	}
+	return p
+}
+
 // StartTime returns when the loop was created.
 func (l *Loop) StartTime() time.Time { return l.startTime }
 
+// Wait blocks until all background memory extractions complete.
+func (l *Loop) Wait() { l.wg.Wait() }
+
 // Run starts the agent loop. It blocks until ctx is cancelled.
+// On shutdown, it waits up to 10 seconds for in-flight memory extractions.
 func (l *Loop) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			l.drainExtractions()
 			return
 		case msg := <-l.hub.In:
 			l.handle(ctx, msg)
 		}
+	}
+}
+
+// drainExtractions waits for in-flight memory extractions to finish,
+// with a 10-second timeout to avoid blocking shutdown indefinitely.
+func (l *Loop) drainExtractions() {
+	done := make(chan struct{})
+	go func() {
+		l.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		slog.Warn("timed out waiting for memory extractions to finish")
 	}
 }
 
@@ -232,8 +272,31 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: response}
 
-	// Extract memories from the conversation turn.
-	l.extractMemories(ctx, msg.ChatID, msg.Text, response)
+	// Skip extraction for trivial messages.
+	if isTrivialMessage(msg.Text) {
+		return
+	}
+
+	// Extract memories in the background so the loop can process the next message.
+	l.wg.Add(1)
+	go func() {
+		defer l.wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("panic in memory extraction", slog.Int64("chat_id", msg.ChatID), slog.Any("panic", r))
+			}
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		l.extractMemories(ctx, msg.ChatID, msg.Text, response)
+	}()
+}
+
+// isTrivialMessage returns true for messages too short to contain memorable content.
+func isTrivialMessage(text string) bool {
+	text = strings.TrimSpace(text)
+	return len(text) < 10 || !strings.Contains(text, " ")
 }
 
 const extractionPrompt = `Extract notable facts, preferences, or personal details about the user from this exchange. Return ONLY a JSON array of short factual strings, or an empty array [] if nothing is worth remembering.
@@ -247,13 +310,16 @@ User: %s
 Assistant: %s`
 
 func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assistantText string) {
+	slog.Debug("memory extraction started", slog.Int64("chat_id", chatID))
+	defer slog.Debug("memory extraction finished", slog.Int64("chat_id", chatID))
+
 	prompt := fmt.Sprintf(extractionPrompt, userText, assistantText)
 	msgs := []provider.Message{
 		{Role: "system", Content: "Extract facts as a JSON array of short strings. Return only valid JSON, no explanation."},
 		{Role: "user", Content: prompt},
 	}
 
-	resp, err := l.provider.Chat(ctx, msgs)
+	resp, err := l.extProvider.Chat(ctx, msgs)
 	if err != nil {
 		slog.Debug("extract memories failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 		return

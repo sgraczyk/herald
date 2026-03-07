@@ -279,10 +279,12 @@ func TestAutoExtraction(t *testing.T) {
 	callCount := 0
 	l, h, db := testLoop(t, &mockProvider{name: "test"})
 
-	l.provider = provider.LLMProvider(&sequentialProvider{
+	sp := provider.LLMProvider(&sequentialProvider{
 		responses: []string{"Sure, I can help!", `["prefers Go", "works at Acme"]`},
 		callCount: &callCount,
 	})
+	l.provider = sp
+	l.extProvider = sp
 
 	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "I prefer Go and I work at Acme"})
 
@@ -291,6 +293,7 @@ func TestAutoExtraction(t *testing.T) {
 		t.Errorf("expected chat response, got %q", out.Text)
 	}
 
+	l.Wait()
 	mems, _ := db.ListMemories(1)
 	if len(mems) != 2 {
 		t.Fatalf("expected 2 auto-extracted memories, got %d", len(mems))
@@ -309,14 +312,17 @@ func TestAutoExtractionDedup(t *testing.T) {
 	// Pre-store a memory.
 	db.AddMemory(1, store.Memory{Fact: "prefers Go", Source: "explicit"})
 
-	l.provider = provider.LLMProvider(&sequentialProvider{
+	sp := provider.LLMProvider(&sequentialProvider{
 		responses: []string{"OK!", `["prefers Go"]`},
 		callCount: &callCount,
 	})
+	l.provider = sp
+	l.extProvider = sp
 
-	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "I prefer Go"})
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "I really prefer Go"})
 	readOut(t, h)
 
+	l.Wait()
 	mems, _ := db.ListMemories(1)
 	if len(mems) != 1 {
 		t.Errorf("expected 1 memory (deduped), got %d", len(mems))
@@ -418,16 +424,93 @@ func TestBuildMessagesWithoutMemories(t *testing.T) {
 	}
 }
 
+func TestPickExtractionProvider(t *testing.T) {
+	mock := &mockProvider{name: "mock"}
+	oai := provider.NewOpenAI("openai", "http://localhost", "gpt-4", "key")
+
+	tests := []struct {
+		name     string
+		provider provider.LLMProvider
+		wantName string
+	}{
+		{"non-fallback returns same provider", mock, "mock"},
+		{"fallback with openai returns openai", provider.NewFallback([]provider.LLMProvider{mock, oai}), "openai"},
+		{"fallback without openai returns fallback", provider.NewFallback([]provider.LLMProvider{mock}), "mock"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := pickExtractionProvider(tt.provider)
+			if got.Name() != tt.wantName {
+				t.Errorf("pickExtractionProvider() = %q, want %q", got.Name(), tt.wantName)
+			}
+		})
+	}
+}
+
+func TestAsyncExtractionDoesNotBlockResponse(t *testing.T) {
+	callCount := 0
+	l, h, _ := testLoop(t, &mockProvider{name: "test"})
+
+	// Use a slow provider for extraction: chat responds instantly, extraction takes 200ms.
+	sp := provider.LLMProvider(&sequentialProvider{
+		responses: []string{"fast reply", `[]`},
+		callCount: &callCount,
+		delay:     []time.Duration{0, 200 * time.Millisecond},
+	})
+	l.provider = sp
+	l.extProvider = sp
+
+	start := time.Now()
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "some longer test message"})
+
+	out := readOut(t, h)
+	elapsed := time.Since(start)
+
+	if out.Text != "fast reply" {
+		t.Errorf("expected 'fast reply', got %q", out.Text)
+	}
+	if elapsed >= 200*time.Millisecond {
+		t.Errorf("response took %v, expected < 200ms (extraction should be async)", elapsed)
+	}
+
+	l.Wait()
+}
+
+func TestTrivialMessageSkipsExtraction(t *testing.T) {
+	callCount := 0
+	l, h, _ := testLoop(t, &mockProvider{name: "test"})
+
+	sp := provider.LLMProvider(&sequentialProvider{
+		responses: []string{"ok"},
+		callCount: &callCount,
+	})
+	l.provider = sp
+	l.extProvider = sp
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hi"})
+	readOut(t, h)
+	l.Wait()
+
+	if callCount != 1 {
+		t.Errorf("expected 1 provider call (no extraction for trivial message), got %d", callCount)
+	}
+}
+
 // sequentialProvider returns different responses for each call.
 type sequentialProvider struct {
 	responses []string
 	callCount *int
+	delay     []time.Duration // optional per-call delay
 }
 
 func (s *sequentialProvider) Name() string { return "test" }
 func (s *sequentialProvider) Chat(_ context.Context, _ []provider.Message) (string, error) {
 	idx := *s.callCount
 	*s.callCount++
+	if idx < len(s.delay) && s.delay[idx] > 0 {
+		time.Sleep(s.delay[idx])
+	}
 	if idx < len(s.responses) {
 		return s.responses[idx], nil
 	}
@@ -458,8 +541,9 @@ func TestHandleMessageNoDuplicateUserMessage(t *testing.T) {
 	cap := &capturingProvider{responses: []string{"response", "[]"}}
 	l, h, db := testLoop(t, cap)
 
-	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hello"})
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hello world message"})
 	readOut(t, h)
+	l.Wait()
 
 	// The first call to Chat is the main conversation call.
 	if len(cap.captured) == 0 {
@@ -467,22 +551,22 @@ func TestHandleMessageNoDuplicateUserMessage(t *testing.T) {
 	}
 	msgs := cap.captured[0]
 
-	// Count how many times the user message "hello" appears.
+	// Count how many times the user message appears.
 	count := 0
 	for _, m := range msgs {
-		if m.Role == "user" && m.Content == "hello" {
+		if m.Role == "user" && m.Content == "hello world message" {
 			count++
 		}
 	}
 	if count != 1 {
-		t.Errorf("expected user message 'hello' exactly once, found %d times", count)
+		t.Errorf("expected user message exactly once, found %d times", count)
 	}
 
 	// Verify it's stored exactly once in the DB.
 	stored, _ := db.List(1)
 	userCount := 0
 	for _, m := range stored {
-		if m.Role == "user" && m.Content == "hello" {
+		if m.Role == "user" && m.Content == "hello world message" {
 			userCount++
 		}
 	}
@@ -499,18 +583,19 @@ func TestHandleMessageNoDuplicateWithHistory(t *testing.T) {
 	_ = db.Append(1, provider.Message{Role: "user", Content: "previous"}, 50)
 	_ = db.Append(1, provider.Message{Role: "assistant", Content: "previous reply"}, 50)
 
-	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "new message"})
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "new message here"})
 	readOut(t, h)
+	l.Wait()
 
 	msgs := cap.captured[0]
 	count := 0
 	for _, m := range msgs {
-		if m.Role == "user" && m.Content == "new message" {
+		if m.Role == "user" && m.Content == "new message here" {
 			count++
 		}
 	}
 	if count != 1 {
-		t.Errorf("expected user message 'new message' exactly once, found %d times", count)
+		t.Errorf("expected user message exactly once, found %d times", count)
 	}
 }
 
