@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.0](https://github.com/sgraczyk/herald/compare/v0.2.1...v0.3.0) (2026-03-07)
+
+
+### Features
+
+* **agent:** make memory extraction async ([#97](https://github.com/sgraczyk/herald/issues/97)) ([270de3a](https://github.com/sgraczyk/herald/commit/270de3a43c42cb6e5bb63e8c9d3fc93d70a324d1))
+* **provider:** add image understanding via OpenAI vision API ([#98](https://github.com/sgraczyk/herald/issues/98)) ([d175d07](https://github.com/sgraczyk/herald/commit/d175d07b3d1e87e75db2ab1f9d6530ae2bcc0f9d))
+
+
+### Bug Fixes
+
+* **health:** return dynamic provider name from /health endpoint ([#94](https://github.com/sgraczyk/herald/issues/94)) ([8569663](https://github.com/sgraczyk/herald/commit/856966387652582eb414a90e2d55af5e2a368112))
+* **provider:** detect auth errors and add timeout to OpenAI provider ([#101](https://github.com/sgraczyk/herald/issues/101)) ([debb2bd](https://github.com/sgraczyk/herald/commit/debb2bd32912ec39314a80b7e833e063a405a296))
+* **provider:** limit OpenAI response body size to 10 MB ([#93](https://github.com/sgraczyk/herald/issues/93)) ([f44702e](https://github.com/sgraczyk/herald/commit/f44702e220db184a618edfbebe17d45769aeb492))
+* **telegram:** preserve full text for unknown commands ([#91](https://github.com/sgraczyk/herald/issues/91)) ([ab3e9a5](https://github.com/sgraczyk/herald/commit/ab3e9a56c8e50f0e2910a2bd33ed4e780d3a31b0))
+
 ## [0.2.1](https://github.com/sgraczyk/herald/compare/v0.2.0...v0.2.1) (2026-03-06)
 
 
