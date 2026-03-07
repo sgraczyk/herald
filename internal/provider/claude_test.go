@@ -117,9 +117,11 @@ func TestBuildClaudeInput(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		got := buildClaudeInput(tt.msgs)
-		if got != tt.want {
-			t.Errorf("buildClaudeInput(%s): got %q, want %q", tt.name, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildClaudeInput(tt.msgs)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
