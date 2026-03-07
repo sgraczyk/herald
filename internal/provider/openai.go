@@ -4,13 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"time"
 )
 
 // maxResponseSize is the maximum allowed response body size (10 MB).
 const maxResponseSize = 10 << 20
+
+// openAITimeout is the HTTP client timeout for OpenAI-compatible providers.
+const openAITimeout = 60 * time.Second
 
 // OpenAI is an OpenAI-compatible HTTP provider.
 // Works with any API that implements the OpenAI chat completions endpoint
@@ -30,7 +36,7 @@ func NewOpenAI(name, baseURL, model, apiKey string) *OpenAI {
 		baseURL: baseURL,
 		model:   model,
 		apiKey:  apiKey,
-		client:  &http.Client{},
+		client:  &http.Client{Timeout: openAITimeout},
 	}
 }
 
@@ -63,7 +69,7 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message) (string, error) {
 
 	resp, err := o.client.Do(req)
 	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
+		if isTimeoutError(ctx, err) {
 			return "", fmt.Errorf("send request: %w: %w", ErrTimeout, err)
 		}
 		return "", fmt.Errorf("send request: %w", err)
@@ -79,6 +85,9 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message) (string, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return "", fmt.Errorf("API error (status %d): %s: %w", resp.StatusCode, respBody, ErrAuthFailure)
+		}
 		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, respBody)
 	}
 
@@ -139,4 +148,14 @@ type openaiResponse struct {
 
 type openaiChoice struct {
 	Message openaiMessage `json:"message"`
+}
+
+// isTimeoutError returns true if the error indicates a timeout, either from
+// the request context or the HTTP client's own timeout.
+func isTimeoutError(ctx context.Context, err error) bool {
+	if ctx.Err() == context.DeadlineExceeded {
+		return true
+	}
+	var netErr net.Error
+	return errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())
 }
