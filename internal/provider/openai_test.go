@@ -3,10 +3,12 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOpenAIChat(t *testing.T) {
@@ -76,6 +78,69 @@ func TestOpenAIAPIError(t *testing.T) {
 	_, err := p.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}})
 	if err == nil {
 		t.Fatal("expected error for 429 response")
+	}
+	if errors.Is(err, ErrAuthFailure) {
+		t.Error("429 should not be an auth failure")
+	}
+}
+
+func TestOpenAIAuthError(t *testing.T) {
+	codes := []int{http.StatusUnauthorized, http.StatusForbidden}
+	for _, code := range codes {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(code)
+				w.Write([]byte(`{"error":"invalid api key"}`))
+			}))
+			defer srv.Close()
+
+			p := NewOpenAI("test", srv.URL, "model", "key")
+			_, err := p.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}})
+			if err == nil {
+				t.Fatalf("expected error for %d response", code)
+			}
+			if !errors.Is(err, ErrAuthFailure) {
+				t.Errorf("expected ErrAuthFailure for %d, got: %v", code, err)
+			}
+		})
+	}
+}
+
+func TestOpenAIContextTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI("test", srv.URL, "model", "key")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	_, err := p.Chat(ctx, []Message{{Role: "user", Content: "hello"}})
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !errors.Is(err, ErrTimeout) {
+		t.Errorf("expected ErrTimeout, got: %v", err)
+	}
+}
+
+func TestOpenAIClientTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI("test", srv.URL, "model", "key")
+	p.client.Timeout = 100 * time.Millisecond
+
+	_, err := p.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}})
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !errors.Is(err, ErrTimeout) {
+		t.Errorf("expected ErrTimeout, got: %v", err)
 	}
 }
 
