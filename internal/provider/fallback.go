@@ -41,6 +41,14 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 	copy(providers, f.providers)
 	f.mu.RUnlock()
 
+	// If any message has images, filter to vision-capable providers only.
+	if hasImages(messages) {
+		providers = filterVisionProviders(providers)
+		if len(providers) == 0 {
+			return "", fmt.Errorf("no vision-capable provider configured")
+		}
+	}
+
 	var errs []string
 	var hasAuthErr, hasTimeout bool
 
@@ -100,4 +108,26 @@ func (f *Fallback) Providers() []LLMProvider {
 	result := make([]LLMProvider, len(f.providers))
 	copy(result, f.providers)
 	return result
+}
+
+// hasImages returns true if any message contains image data.
+func hasImages(messages []Message) bool {
+	for _, m := range messages {
+		if len(m.Images) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// filterVisionProviders returns only providers that support image input.
+// Currently only *OpenAI providers support vision.
+func filterVisionProviders(providers []LLMProvider) []LLMProvider {
+	var vision []LLMProvider
+	for _, p := range providers {
+		if _, ok := p.(*OpenAI); ok {
+			vision = append(vision, p)
+		}
+	}
+	return vision
 }

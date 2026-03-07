@@ -3,7 +3,9 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/go-telegram/bot/models"
 	"github.com/sgraczyk/herald/internal/format"
 	"github.com/sgraczyk/herald/internal/hub"
+	"github.com/sgraczyk/herald/internal/provider"
 )
 
 // knownCommands is the set of commands handled by the agent loop.
@@ -91,6 +94,12 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 
+	// Handle photo messages.
+	if len(msg.Photo) > 0 {
+		a.handlePhoto(ctx, b, msg, chatID, userID)
+		return
+	}
+
 	text := strings.TrimSpace(msg.Text)
 	if text == "" {
 		return
@@ -98,6 +107,76 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 
 	in := parseMessage(chatID, userID, text)
 	a.hub.In <- in
+}
+
+func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Message, chatID, userID int64) {
+	// Select largest photo (last element in Telegram's PhotoSize array).
+	photo := msg.Photo[len(msg.Photo)-1]
+
+	file, err := b.GetFile(ctx, &bot.GetFileParams{FileID: photo.FileID})
+	if err != nil {
+		slog.Error("get photo file failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+		a.sendError(ctx, chatID, "Failed to download image.")
+		return
+	}
+
+	fileURL := a.bot.FileDownloadLink(file)
+	dlCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(dlCtx, http.MethodGet, fileURL, nil)
+	if err != nil {
+		slog.Error("create download request failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+		a.sendError(ctx, chatID, "Failed to download image.")
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Error("download photo failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+		a.sendError(ctx, chatID, "Failed to download image.")
+		return
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		slog.Error("read photo data failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+		a.sendError(ctx, chatID, "Failed to download image.")
+		return
+	}
+
+	mimeType := http.DetectContentType(data)
+	imgData, err := provider.PreprocessImage(data, mimeType)
+	if err != nil {
+		slog.Error("preprocess image failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+		a.sendError(ctx, chatID, "Failed to process image.")
+		return
+	}
+
+	text := strings.TrimSpace(msg.Caption)
+	if text == "" {
+		text = "What's in this image?"
+	}
+
+	a.hub.In <- hub.InMessage{
+		ChatID: chatID,
+		UserID: userID,
+		Text:   text,
+		Images: []hub.ImageAttachment{
+			{Base64: imgData.Base64, MimeType: imgData.MimeType},
+		},
+	}
+}
+
+func (a *Adapter) sendError(ctx context.Context, chatID int64, text string) {
+	_, err := a.bot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: chatID,
+		Text:   text,
+	})
+	if err != nil {
+		slog.Error("send error message failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+	}
 }
 
 // parseMessage builds an InMessage from raw text, extracting any command.

@@ -31,7 +31,12 @@ func TestOpenAIChat(t *testing.T) {
 		if req.Model != "test-model" {
 			t.Errorf("expected model test-model, got %s", req.Model)
 		}
-		if len(req.Messages) != 1 || req.Messages[0].Content != "hello" {
+		if len(req.Messages) != 1 {
+			t.Errorf("unexpected messages count: %d", len(req.Messages))
+		}
+		// Content is a string for text-only messages.
+		content, ok := req.Messages[0].Content.(string)
+		if !ok || content != "hello" {
 			t.Errorf("unexpected messages: %+v", req.Messages)
 		}
 
@@ -117,5 +122,88 @@ func TestOpenAIEmptyChoices(t *testing.T) {
 	_, err := p.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}})
 	if err == nil {
 		t.Fatal("expected error for empty choices")
+	}
+}
+
+func TestBuildOpenAIContentTextOnly(t *testing.T) {
+	m := Message{Role: "user", Content: "hello"}
+	got := buildOpenAIContent(m)
+	s, ok := got.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", got)
+	}
+	if s != "hello" {
+		t.Errorf("expected 'hello', got %q", s)
+	}
+}
+
+func TestBuildOpenAIContentWithImage(t *testing.T) {
+	m := Message{
+		Role:    "user",
+		Content: "describe this",
+		Images:  []ImageData{{Base64: "abc123", MimeType: "image/jpeg"}},
+	}
+	got := buildOpenAIContent(m)
+	parts, ok := got.([]map[string]any)
+	if !ok {
+		t.Fatalf("expected []map[string]any, got %T", got)
+	}
+	if len(parts) != 2 {
+		t.Fatalf("expected 2 parts, got %d", len(parts))
+	}
+
+	// First part: text.
+	if parts[0]["type"] != "text" {
+		t.Errorf("expected text type, got %v", parts[0]["type"])
+	}
+	if parts[0]["text"] != "describe this" {
+		t.Errorf("expected text content, got %v", parts[0]["text"])
+	}
+
+	// Second part: image_url.
+	if parts[1]["type"] != "image_url" {
+		t.Errorf("expected image_url type, got %v", parts[1]["type"])
+	}
+	imgURL := parts[1]["image_url"].(map[string]string)
+	if imgURL["url"] != "data:image/jpeg;base64,abc123" {
+		t.Errorf("unexpected image URL: %v", imgURL["url"])
+	}
+}
+
+func TestOpenAIChatWithImage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var raw map[string]any
+		json.NewDecoder(r.Body).Decode(&raw)
+		msgs := raw["messages"].([]any)
+		msg := msgs[0].(map[string]any)
+
+		// Content should be an array for image messages.
+		content, ok := msg["content"].([]any)
+		if !ok {
+			t.Errorf("expected content array for image message, got %T", msg["content"])
+		}
+		if len(content) != 2 {
+			t.Errorf("expected 2 content parts, got %d", len(content))
+		}
+
+		json.NewEncoder(w).Encode(openaiResponse{
+			Choices: []openaiChoice{
+				{Message: openaiMessage{Role: "assistant", Content: "I see a cat"}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI("test", srv.URL, "test-model", "test-key")
+	got, err := p.Chat(context.Background(), []Message{{
+		Role:    "user",
+		Content: "What's this?",
+		Images:  []ImageData{{Base64: "abc", MimeType: "image/jpeg"}},
+	}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "I see a cat" {
+		t.Errorf("expected 'I see a cat', got %q", got)
 	}
 }

@@ -234,6 +234,16 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 
 	// Build messages and call provider.
 	messages := buildMessages(history, memories, msg.Text, l.systemPrompt)
+
+	// Attach images to the current user message (last in the list).
+	if len(msg.Images) > 0 {
+		last := &messages[len(messages)-1]
+		last.Images = make([]provider.ImageData, len(msg.Images))
+		for i, img := range msg.Images {
+			last.Images[i] = provider.ImageData{Base64: img.Base64, MimeType: img.MimeType}
+		}
+	}
+
 	response, err := l.provider.Chat(ctx, messages)
 	if err != nil {
 		slog.Error("provider call failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
@@ -250,10 +260,14 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		return
 	}
 
-	// Save user message.
+	// Save user message. Strip images — store text placeholder instead.
+	userContent := msg.Text
+	if len(msg.Images) > 0 {
+		userContent = "[image] " + msg.Text
+	}
 	userMsg := provider.Message{
 		Role:      "user",
-		Content:   msg.Text,
+		Content:   userContent,
 		Timestamp: time.Now(),
 	}
 	if err := l.store.Append(msg.ChatID, userMsg, l.historyLimit); err != nil {
