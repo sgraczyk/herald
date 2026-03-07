@@ -2,8 +2,11 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -177,5 +180,63 @@ func TestFallbackProviders(t *testing.T) {
 	}
 	if got[0].Name() != "a" || got[1].Name() != "b" {
 		t.Errorf("unexpected provider order: %s, %s", got[0].Name(), got[1].Name())
+	}
+}
+
+func TestFallbackImageRoutesToOpenAI(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(openaiResponse{
+			Choices: []openaiChoice{{Message: openaiMessage{Role: "assistant", Content: "I see an image"}}},
+		})
+	}))
+	defer srv.Close()
+
+	fb := NewFallback([]LLMProvider{
+		&stubProvider{name: "claude", response: "from claude"},
+		NewOpenAI("openai", srv.URL, "model", "key"),
+	})
+
+	// Image message — claude should be skipped, openai should be tried.
+	msgs := []Message{{Role: "user", Content: "test", Images: []ImageData{{Base64: "abc", MimeType: "image/jpeg"}}}}
+	got, err := fb.Chat(context.Background(), msgs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "I see an image" {
+		t.Errorf("expected 'I see an image', got %q", got)
+	}
+	if fb.Name() != "openai" {
+		t.Errorf("expected active 'openai', got %q", fb.Name())
+	}
+}
+
+func TestFallbackImageNoVisionProvider(t *testing.T) {
+	fb := NewFallback([]LLMProvider{
+		&stubProvider{name: "claude"},
+	})
+
+	msgs := []Message{{Role: "user", Content: "test", Images: []ImageData{{Base64: "abc", MimeType: "image/jpeg"}}}}
+	_, err := fb.Chat(context.Background(), msgs)
+	if err == nil {
+		t.Fatal("expected error when no vision provider available")
+	}
+	if err.Error() != "no vision-capable provider configured" {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestFallbackTextUnaffectedByImageRouting(t *testing.T) {
+	fb := NewFallback([]LLMProvider{
+		&stubProvider{name: "claude", response: "from claude"},
+		NewOpenAI("openai", "http://invalid", "model", "key"),
+	})
+
+	// Text-only message should use normal fallback (claude first).
+	got, err := fb.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "from claude" {
+		t.Errorf("expected 'from claude', got %q", got)
 	}
 }

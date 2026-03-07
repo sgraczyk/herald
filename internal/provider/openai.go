@@ -44,7 +44,7 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message) (string, error) {
 	for i, m := range messages {
 		reqBody.Messages[i] = openaiMessage{
 			Role:    m.Role,
-			Content: m.Content,
+			Content: buildOpenAIContent(m),
 		}
 	}
 
@@ -91,7 +91,11 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message) (string, error) {
 		return "", fmt.Errorf("empty response from %s", o.name)
 	}
 
-	return result.Choices[0].Message.Content, nil
+	content, ok := result.Choices[0].Message.Content.(string)
+	if !ok {
+		return "", fmt.Errorf("unexpected content type in response from %s", o.name)
+	}
+	return content, nil
 }
 
 type openaiRequest struct {
@@ -101,7 +105,32 @@ type openaiRequest struct {
 
 type openaiMessage struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
+}
+
+// buildOpenAIContent returns a plain string for text-only messages,
+// or a content array with text and image_url parts for image messages.
+func buildOpenAIContent(m Message) any {
+	if len(m.Images) == 0 {
+		return m.Content
+	}
+
+	parts := make([]map[string]any, 0, 1+len(m.Images))
+	if m.Content != "" {
+		parts = append(parts, map[string]any{
+			"type": "text",
+			"text": m.Content,
+		})
+	}
+	for _, img := range m.Images {
+		parts = append(parts, map[string]any{
+			"type": "image_url",
+			"image_url": map[string]string{
+				"url": "data:" + img.MimeType + ";base64," + img.Base64,
+			},
+		})
+	}
+	return parts
 }
 
 type openaiResponse struct {

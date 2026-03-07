@@ -1,11 +1,18 @@
 package hub
 
+// ImageAttachment holds a base64-encoded image from Telegram.
+type ImageAttachment struct {
+	Base64   string
+	MimeType string
+}
+
 // InMessage represents an incoming message to be processed.
 type InMessage struct {
 	ChatID  int64
 	UserID  int64
 	Text    string
-	Command string // e.g. "/clear", "/model", "/status" (empty for regular messages)
+	Command string           // e.g. "/clear", "/model", "/status" (empty for regular messages)
+	Images  []ImageAttachment // optional image attachments
 }
 
 // OutMessage represents an outgoing response to be sent.
