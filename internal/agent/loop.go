@@ -310,6 +310,9 @@ User: %s
 Assistant: %s`
 
 func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assistantText string) {
+	slog.Debug("memory extraction started", slog.Int64("chat_id", chatID))
+	defer slog.Debug("memory extraction finished", slog.Int64("chat_id", chatID))
+
 	prompt := fmt.Sprintf(extractionPrompt, userText, assistantText)
 	msgs := []provider.Message{
 		{Role: "system", Content: "Extract facts as a JSON array of short strings. Return only valid JSON, no explanation."},

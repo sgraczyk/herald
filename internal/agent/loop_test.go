@@ -424,6 +424,30 @@ func TestBuildMessagesWithoutMemories(t *testing.T) {
 	}
 }
 
+func TestPickExtractionProvider(t *testing.T) {
+	mock := &mockProvider{name: "mock"}
+	oai := provider.NewOpenAI("openai", "http://localhost", "gpt-4", "key")
+
+	tests := []struct {
+		name     string
+		provider provider.LLMProvider
+		wantName string
+	}{
+		{"non-fallback returns same provider", mock, "mock"},
+		{"fallback with openai returns openai", provider.NewFallback([]provider.LLMProvider{mock, oai}), "openai"},
+		{"fallback without openai returns fallback", provider.NewFallback([]provider.LLMProvider{mock}), "mock"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := pickExtractionProvider(tt.provider)
+			if got.Name() != tt.wantName {
+				t.Errorf("pickExtractionProvider() = %q, want %q", got.Name(), tt.wantName)
+			}
+		})
+	}
+}
+
 func TestAsyncExtractionDoesNotBlockResponse(t *testing.T) {
 	callCount := 0
 	l, h, _ := testLoop(t, &mockProvider{name: "test"})
