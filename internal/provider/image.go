@@ -69,4 +69,3 @@ func resizeImage(img image.Image, w, h int) image.Image {
 	draw.CatmullRom.Scale(dst, dst.Bounds(), img, img.Bounds(), draw.Over, nil)
 	return dst
 }
-

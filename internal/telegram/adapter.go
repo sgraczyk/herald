@@ -139,7 +139,7 @@ func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Messa
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 20<<20))
 	if err != nil {
 		slog.Error("read photo data failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 		a.sendError(ctx, chatID, "Failed to download image.")
