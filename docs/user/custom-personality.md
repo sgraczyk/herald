@@ -104,4 +104,4 @@ Make sure the field name is exactly `system_prompt` (with underscore, lowercase)
 
 ## Technical details
 
-For implementation details on how the configurable system prompt works, see [Configurable System Prompt Technical Documentation](../configurable-system-prompt.md).
+For implementation details on how the configurable system prompt works, see [Configuration](../configuration.md#system-prompt).

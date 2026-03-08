@@ -195,4 +195,4 @@ With no whitespace or tag boundaries, the split falls back to exact byte positio
 
 ## Related Documentation
 
-For a user-facing explanation of this feature, see [Long Responses Now Arrive in Full](user/long-messages.md).
+For a user-facing explanation of this feature, see [Response Handling](response-handling.md).
