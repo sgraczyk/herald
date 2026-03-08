@@ -21,7 +21,7 @@ func ValidateProviders(ctx context.Context, providers []LLMProvider) {
 		case *OpenAI:
 			validateOpenAI(ctx, v)
 		case *Claude:
-			validateClaude(ctx)
+			validateClaude()
 		default:
 			slog.Warn("unknown provider type, skipping validation", slog.String("provider", p.Name()))
 		}
@@ -73,7 +73,7 @@ func validateOpenAI(ctx context.Context, o *OpenAI) {
 }
 
 // validateClaude checks that the claude CLI binary exists on PATH.
-func validateClaude(ctx context.Context) {
+func validateClaude() {
 	path, err := exec.LookPath("claude")
 	if err != nil {
 		slog.Warn("claude CLI not found on PATH", slog.String("error", err.Error()))
