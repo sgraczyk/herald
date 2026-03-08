@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/sgraczyk/herald/compare/v0.3.0...v0.3.1) (2026-03-08)
+
+
+### Bug Fixes
+
+* **provider:** replace dead Chutes.ai model and add startup validation ([#103](https://github.com/sgraczyk/herald/issues/103)) ([2123f59](https://github.com/sgraczyk/herald/commit/2123f59f50d950911cb00bc05b95a76a85566ad2))
+
 ## [0.3.0](https://github.com/sgraczyk/herald/compare/v0.2.1...v0.3.0) (2026-03-07)
 
 
