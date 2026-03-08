@@ -40,9 +40,19 @@ type StoreConfig struct {
 
 // Load reads config from path and resolves env vars for secrets.
 func Load(path string) (*Config, error) {
+	return LoadWithDefaults(path, nil)
+}
+
+// LoadWithDefaults reads config from path. If the file does not exist and
+// defaults is non-nil, the embedded defaults are used instead.
+func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read config file: %w", err)
+		if defaults != nil && os.IsNotExist(err) {
+			data = defaults
+		} else {
+			return nil, fmt.Errorf("read config file: %w", err)
+		}
 	}
 
 	var cfg Config
