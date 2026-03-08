@@ -6,7 +6,7 @@ Herald handles two layers of response size management: an upstream size cap on p
 
 Herald limits responses from external AI providers to 10 MB. If a provider sends a response larger than this, Herald rejects it and tries the next provider in the fallback chain. If all providers fail, you receive a short error message in Telegram.
 
-A typical AI chat response is a few kilobytes -- well under 1% of this limit. The threshold exists as a safety net against abnormal upstream behavior on Herald's 512 MB container. No configuration needed; the protection is automatic.
+A typical AI chat response is a few kilobytes -- well under 1% of this limit. The threshold exists as a safety net against abnormal upstream behavior on Herald's 512 MB container. No configuration needed; the protection is automatic. For implementation details (LimitReader+1 technique, error ordering), see [OpenAI Response Size Limit](openai-response-size-limit.md).
 
 ## Message Splitting
 
