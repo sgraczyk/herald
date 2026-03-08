@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	herald "github.com/sgraczyk/herald"
+	"github.com/sgraczyk/herald"
 	"github.com/sgraczyk/herald/internal/config"
 	"github.com/sgraczyk/herald/internal/provider"
 )
