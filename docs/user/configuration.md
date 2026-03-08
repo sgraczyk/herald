@@ -61,8 +61,8 @@ Here is every field you can set in the config file:
     {
       "name": "chutes",
       "type": "openai",
-      "base_url": "https://api.chutes.ai/v1",
-      "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "base_url": "https://chutes-qwen-qwen2-5-vl-32b-instruct.chutes.ai/v1",
+      "model": "Qwen/Qwen2.5-VL-32B-Instruct",
       "api_key_env": "CHUTES_API_KEY"
     }
   ],
@@ -205,8 +205,8 @@ Works with any API that follows the OpenAI chat completions format: Chutes.ai, G
 {
   "name": "chutes",
   "type": "openai",
-  "base_url": "https://api.chutes.ai/v1",
-  "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+  "base_url": "https://chutes-qwen-qwen2-5-vl-32b-instruct.chutes.ai/v1",
+  "model": "Qwen/Qwen2.5-VL-32B-Instruct",
   "api_key_env": "CHUTES_API_KEY"
 }
 ```
@@ -231,8 +231,8 @@ The most common configuration uses Claude CLI as the primary provider with an Op
     {
       "name": "chutes",
       "type": "openai",
-      "base_url": "https://api.chutes.ai/v1",
-      "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "base_url": "https://chutes-qwen-qwen2-5-vl-32b-instruct.chutes.ai/v1",
+      "model": "Qwen/Qwen2.5-VL-32B-Instruct",
       "api_key_env": "CHUTES_API_KEY"
     }
   ]

@@ -142,4 +142,4 @@ Deeper validation was excluded to keep startup fast and avoid side effects (toke
 
 ### Config-only vision fix
 
-No code changes were needed to restore vision. The `OpenAI` provider already built correct multi-part content arrays with `image_url` blocks (PR #98). The failure was a dead upstream model endpoint, fixed by swapping to `Qwen/Qwen2.5-VL-72B-Instruct` in `config.json.example`.
+No code changes were needed to restore vision. The `OpenAI` provider already built correct multi-part content arrays with `image_url` blocks (PR #98). The failure was a dead upstream model endpoint, fixed by swapping to a vision-capable Qwen model (currently `Qwen/Qwen2.5-VL-32B-Instruct`) in `config.json.example`.

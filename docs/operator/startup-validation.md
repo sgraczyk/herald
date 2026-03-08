@@ -12,7 +12,7 @@ Herald v0.3.0 shipped with a dead AI model on Chutes.ai. The configured model wa
 
 This update:
 
-1. **Replaces the dead model** with `Qwen/Qwen2.5-VL-72B-Instruct`, a vision-language model that handles both text and images.
+1. **Replaces the dead model** with `Qwen/Qwen2.5-VL-32B-Instruct`, a vision-language model that handles both text and images.
 2. **Adds startup validation** so Herald checks provider reachability at boot and logs the results.
 
 No changes to message processing, conversation handling, or history management.
@@ -25,9 +25,9 @@ Update the `model` field in the OpenAI provider section of `/etc/herald/config.j
 {
   "openai": {
     "name": "chutes",
-    "base_url": "https://api.chutes.ai/v1",
+    "base_url": "https://chutes-qwen-qwen2-5-vl-32b-instruct.chutes.ai/v1",
     "api_key_env": "CHUTES_API_KEY",
-    "model": "Qwen/Qwen2.5-VL-72B-Instruct"
+    "model": "Qwen/Qwen2.5-VL-32B-Instruct"
   }
 }
 ```
@@ -53,7 +53,8 @@ The previous model (`Qwen/Qwen3-235B-A22B-Instruct-2507`) was text-only. The new
    ```bash
    ssh root@192.168.0.107
    vi /etc/herald/config.json
-   # Change model to: Qwen/Qwen2.5-VL-72B-Instruct
+   # Change model to: Qwen/Qwen2.5-VL-32B-Instruct
+   # Change base_url to: https://chutes-qwen-qwen2-5-vl-32b-instruct.chutes.ai/v1
    ```
 
 4. Restart the service:
@@ -94,10 +95,10 @@ The API key is invalid or expired. Check `CHUTES_API_KEY` in `/etc/herald/.env` 
 ### Warning: provider unreachable
 
 ```
-WARN  provider unreachable  provider=chutes  url=https://api.chutes.ai/v1  error=...
+WARN  provider unreachable  provider=chutes  url=https://chutes-qwen-qwen2-5-vl-32b-instruct.chutes.ai/v1  error=...
 ```
 
-Network issue or service outage. Try `curl https://api.chutes.ai/v1/models` from the container. Herald will still start and retry on each message.
+Network issue or service outage. Try `curl https://chutes-qwen-qwen2-5-vl-32b-instruct.chutes.ai/v1/models` from the container. Herald will still start and retry on each message.
 
 ### Warning: Claude CLI not found
 
