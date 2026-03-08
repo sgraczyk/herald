@@ -12,7 +12,7 @@ Herald v0.3.0 shipped with a dead AI model on Chutes.ai. The configured model wa
 
 This update:
 
-1. **Replaces the dead model** with `Qwen/Qwen2.5-VL-72B-Instruct`, a vision-language model that handles both text and images.
+1. **Replaces the dead model** with `Qwen/Qwen2.5-VL-32B-Instruct`, a vision-language model that handles both text and images.
 2. **Adds startup validation** so Herald checks provider reachability at boot and logs the results.
 
 No changes to message processing, conversation handling, or history management.
@@ -53,7 +53,8 @@ The previous model (`Qwen/Qwen3-235B-A22B-Instruct-2507`) was text-only. The new
    ```bash
    ssh root@192.168.0.107
    vi /etc/herald/config.json
-   # Change model to: Qwen/Qwen2.5-VL-72B-Instruct
+   # Change model to: Qwen/Qwen2.5-VL-32B-Instruct
+   # Change base_url to: https://chutes-qwen-qwen2-5-vl-32b-instruct.chutes.ai/v1
    ```
 
 4. Restart the service:
