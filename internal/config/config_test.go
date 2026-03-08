@@ -136,6 +136,51 @@ func TestLoad_MissingFile(t *testing.T) {
 	}
 }
 
+func TestLoadWithDefaults_UsesEmbeddedWhenFileAbsent(t *testing.T) {
+	defaults := []byte(`{
+		"telegram": {"token_env": "EMBED_TG"},
+		"providers": [{"name": "embed-claude", "type": "claude-cli"}],
+		"history_limit": 25
+	}`)
+
+	cfg, err := LoadWithDefaults("/nonexistent/config.json", defaults)
+	if err != nil {
+		t.Fatalf("LoadWithDefaults: %v", err)
+	}
+	if cfg.Telegram.TokenEnv != "EMBED_TG" {
+		t.Errorf("TokenEnv = %q, want %q", cfg.Telegram.TokenEnv, "EMBED_TG")
+	}
+	if len(cfg.Providers) != 1 || cfg.Providers[0].Name != "embed-claude" {
+		t.Errorf("Providers = %v, want [embed-claude]", cfg.Providers)
+	}
+	if cfg.HistoryLimit != 25 {
+		t.Errorf("HistoryLimit = %d, want 25", cfg.HistoryLimit)
+	}
+}
+
+func TestLoadWithDefaults_DiskOverridesEmbedded(t *testing.T) {
+	defaults := []byte(`{"telegram": {"token_env": "EMBED_TG"}, "history_limit": 25}`)
+	diskConfig := `{"telegram": {"token_env": "DISK_TG"}, "history_limit": 10}`
+
+	cfg, err := LoadWithDefaults(writeConfig(t, diskConfig), defaults)
+	if err != nil {
+		t.Fatalf("LoadWithDefaults: %v", err)
+	}
+	if cfg.Telegram.TokenEnv != "DISK_TG" {
+		t.Errorf("TokenEnv = %q, want %q", cfg.Telegram.TokenEnv, "DISK_TG")
+	}
+	if cfg.HistoryLimit != 10 {
+		t.Errorf("HistoryLimit = %d, want 10", cfg.HistoryLimit)
+	}
+}
+
+func TestLoadWithDefaults_NilDefaultsMissingFile(t *testing.T) {
+	_, err := LoadWithDefaults("/nonexistent/config.json", nil)
+	if err == nil {
+		t.Fatal("expected error when file missing and no defaults")
+	}
+}
+
 func TestLoad_MalformedJSON(t *testing.T) {
 	_, err := Load(writeConfig(t, `{not json`))
 	if err == nil {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	herald "github.com/sgraczyk/herald"
 	"github.com/sgraczyk/herald/internal/agent"
 	"github.com/sgraczyk/herald/internal/config"
 	"github.com/sgraczyk/herald/internal/health"
@@ -69,7 +70,7 @@ func initLogging(levelStr string) {
 }
 
 func serve(configPath string) error {
-	cfg, err := config.Load(configPath)
+	cfg, err := config.LoadWithDefaults(configPath, herald.DefaultConfig)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}

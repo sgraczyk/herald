@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	herald "github.com/sgraczyk/herald"
 	"github.com/sgraczyk/herald/internal/config"
 	"github.com/sgraczyk/herald/internal/provider"
 )
@@ -19,7 +20,7 @@ func newAskCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			configPath, _ := cmd.Flags().GetString("config")
 
-			cfg, err := config.Load(configPath)
+			cfg, err := config.LoadWithDefaults(configPath, herald.DefaultConfig)
 			if err != nil {
 				return fmt.Errorf("load config: %w", err)
 			}
