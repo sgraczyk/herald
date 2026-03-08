@@ -25,9 +25,9 @@ Update the `model` field in the OpenAI provider section of `/etc/herald/config.j
 {
   "openai": {
     "name": "chutes",
-    "base_url": "https://api.chutes.ai/v1",
+    "base_url": "https://chutes-qwen-qwen2-5-vl-32b-instruct.chutes.ai/v1",
     "api_key_env": "CHUTES_API_KEY",
-    "model": "Qwen/Qwen2.5-VL-72B-Instruct"
+    "model": "Qwen/Qwen2.5-VL-32B-Instruct"
   }
 }
 ```
@@ -94,10 +94,10 @@ The API key is invalid or expired. Check `CHUTES_API_KEY` in `/etc/herald/.env` 
 ### Warning: provider unreachable
 
 ```
-WARN  provider unreachable  provider=chutes  url=https://api.chutes.ai/v1  error=...
+WARN  provider unreachable  provider=chutes  url=https://chutes-qwen-qwen2-5-vl-32b-instruct.chutes.ai/v1  error=...
 ```
 
-Network issue or service outage. Try `curl https://api.chutes.ai/v1/models` from the container. Herald will still start and retry on each message.
+Network issue or service outage. Try `curl https://chutes-qwen-qwen2-5-vl-32b-instruct.chutes.ai/v1/models` from the container. Herald will still start and retry on each message.
 
 ### Warning: Claude CLI not found
 
