@@ -7,14 +7,14 @@ Lightweight, self-hosted AI assistant bot for Telegram.
 
 ## Features
 
-- **Provider fallback** -- Claude CLI as primary, any OpenAI-compatible API as backup
-- **Conversation history** -- per-chat message history stored in bbolt (embedded, pure Go)
-- **Long-term memory** -- remembers facts and preferences across conversations
-- **User whitelist** -- only responds to authorized Telegram user IDs
-- **CLI mode** -- test locally with `./herald ask "question"` without Telegram
-- **Telegram commands** -- `/clear` resets context, `/model` switches providers, `/status` shows bot info
-- **Image support** -- understands photos sent in Telegram chats
-- **Single binary** -- no CGO, no Docker, no external dependencies at runtime
+- **Provider fallback** — Claude CLI as primary, any OpenAI-compatible API as backup
+- **Conversation history** — per-chat message history stored in bbolt (embedded, pure Go)
+- **Long-term memory** — remembers facts and preferences across conversations
+- **User whitelist** — only responds to authorized Telegram user IDs
+- **CLI mode** — test locally with `./herald ask "question"` without Telegram
+- **Telegram commands** — `/clear` resets context, `/model` switches providers, `/status` shows bot info
+- **Image support** — understands photos sent in Telegram chats
+- **Single binary** — no CGO, no Docker, no external dependencies at runtime
 
 ## Quick Start
 
