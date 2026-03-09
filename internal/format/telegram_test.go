@@ -208,6 +208,7 @@ func BenchmarkTelegramHTML(b *testing.B) {
 
 Visit [example](https://example.com) for details.`
 
+	b.ReportAllocs()
 	for b.Loop() {
 		TelegramHTML(input)
 	}
