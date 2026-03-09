@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -105,7 +106,8 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 
 func parseUserIDs(raw string) ([]int64, error) {
 	var ids []int64
-	for _, part := range splitTrim(raw, ',') {
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
@@ -116,30 +118,4 @@ func parseUserIDs(raw string) ([]int64, error) {
 		ids = append(ids, id)
 	}
 	return ids, nil
-}
-
-func splitTrim(s string, sep byte) []string {
-	var parts []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == sep {
-			part := trimSpace(s[start:i])
-			parts = append(parts, part)
-			start = i + 1
-		}
-	}
-	part := trimSpace(s[start:])
-	parts = append(parts, part)
-	return parts
-}
-
-func trimSpace(s string) string {
-	start, end := 0, len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\t') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
-		end--
-	}
-	return s[start:end]
 }
