@@ -192,6 +192,27 @@ func TestTelegramHTML_MixedContent(t *testing.T) {
 	}
 }
 
+func BenchmarkTelegramHTML(b *testing.B) {
+	input := `# Weather Report
+
+**Today's forecast:**
+
+- Temperature: *15°C*
+- Wind: 10 km/h
+
+> Stay warm!
+
+| Key | Value |
+|-----|-------|
+| **Humidity** | 60% |
+
+Visit [example](https://example.com) for details.`
+
+	for b.Loop() {
+		TelegramHTML(input)
+	}
+}
+
 func TestStripHTMLTags(t *testing.T) {
 	tests := []struct {
 		input string
