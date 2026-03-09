@@ -6,7 +6,7 @@ Herald uses Go's standard `log/slog` package for structured logging. Logs are wr
 
 | Level | What It Shows |
 |-------|---------------|
-| `debug` | Detailed internals -- typing indicator failures, memory extraction attempts, LLM response parsing |
+| `debug` | Detailed internals -- typing indicator failures, memory extraction attempts, LLM response parsing, message validation (e.g., ignored messages with nil sender) |
 | `info` | Normal operation -- startup, shutdown, provider selection. **Default.** |
 | `warn` | Non-fatal issues -- invalid config values ignored, provider retries, unauthorized user rejected |
 | `error` | Failures needing attention -- provider errors, storage failures |

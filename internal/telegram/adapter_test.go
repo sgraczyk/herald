@@ -245,6 +245,24 @@ func TestHandleUpdateNilMessage(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateNilFrom(t *testing.T) {
+	a, h := testAdapter(t, map[int64]bool{111: true})
+
+	update := &models.Update{
+		Message: &models.Message{
+			From: nil,
+			Chat: models.Chat{ID: 42},
+			Text: "hello",
+		},
+	}
+	a.handleUpdate(context.Background(), nil, update)
+
+	_, ok := readIn(t, h)
+	if ok {
+		t.Fatal("expected no message on Hub.In for nil From")
+	}
+}
+
 func TestHandleUpdateEmptyText(t *testing.T) {
 	a, h := testAdapter(t, map[int64]bool{111: true})
 
