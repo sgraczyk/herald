@@ -73,7 +73,7 @@ Then run `./herald`. Herald looks for `config.json` in the current directory by 
 | `store.path` | string | No | `"herald.db"` | Path to the bbolt database file |
 | `http_port` | integer | No | `0` (disabled) | Health check HTTP endpoint port (0--65535) |
 | `history_limit` | integer | No | `50` | Max messages per chat |
-| `log_level` | string | No | `"info"` | Logging verbosity (overridable via `LOG_LEVEL` env var) |
+| `log_level` | string | No | `"info"` | Logging verbosity (see [Logging](logging.md)) |
 | `system_prompt` | string | No | (built-in) | Custom system prompt sent to the LLM |
 | `allowed_user_ids_env` | string | Yes | -- | Env var name holding comma-separated allowed Telegram user IDs |
 
@@ -117,18 +117,46 @@ Works with any OpenAI chat completions API: Chutes.ai, Groq, OpenRouter, local O
 }
 ```
 
+### Vision Support
+
+| Provider | Images | Notes |
+|----------|:------:|-------|
+| OpenAI-compatible | Yes | Requires vision-capable model (`VL` suffix) |
+| Claude CLI | No | Pipe mode is text-only; images fall back to OpenAI provider |
+
 ### Recommended Setup
 
 Claude CLI as primary, OpenAI-compatible as fallback. If Claude fails or times out, Herald automatically tries the next provider.
 
+### Startup Validation
+
+Herald validates providers at startup, logging warnings for unreachable or misconfigured services. Validation is advisory only -- it never blocks startup.
+
+**Healthy:**
+```
+INFO  provider reachable  provider=chutes
+INFO  provider reachable  provider=claude  path=/usr/local/bin/claude
+```
+
+**Auth failure:**
+```
+WARN  provider auth failure  provider=chutes  status=401
+```
+Fix: Check `CHUTES_API_KEY` in `/etc/herald/.env`.
+
+**Unreachable:**
+```
+WARN  provider unreachable  provider=chutes  url=...  error=...
+```
+Fix: Check network. Try `curl {baseURL}/models` from the container. Herald retries on each message.
+
 ## System Prompt
 
-The optional `system_prompt` field replaces the built-in default prompt. When empty or absent, Herald uses a hardcoded default that includes Telegram formatting rules.
+The optional `system_prompt` field replaces the built-in default prompt. When empty or absent, Herald uses a hardcoded default that includes Telegram formatting rules. See [Custom Personality](features.md#custom-personality) for usage guide.
 
 - **Full replacement:** The custom prompt completely replaces the default (does not merge).
 - **Memory injection:** User memories are appended to whichever prompt is active.
 - **Length warning:** Prompts longer than 4000 characters log a warning at startup but are not rejected.
-- **Whitespace-only:** Treated as non-empty and used as-is (no trimming).
 
 ## Embedded Defaults
 
@@ -138,48 +166,6 @@ Herald embeds `config.json.example` into the binary at build time via `//go:embe
 - **Existing setup:** Completely unaffected. Your `config.json` is used as before.
 - **Reset to defaults:** Delete `config.json` and restart Herald.
 - **`--config` flag:** If the specified file doesn't exist, falls back to embedded defaults.
-
-## Developer Reference
-
-### Config Loading
-
-```go
-func Load(path string) (*Config, error)
-func LoadWithDefaults(path string, defaults []byte) (*Config, error)
-```
-
-`Load` delegates to `LoadWithDefaults` with `nil` defaults. Processing order: read file → parse JSON → apply zero-value defaults → validate `HTTPPort` (0--65535) → resolve env vars → apply `LOG_LEVEL` override → parse `AllowedUserIDs`.
-
-| File exists | defaults | Result |
-|-------------|----------|--------|
-| yes | any | Uses file on disk |
-| no | non-nil | Uses embedded defaults |
-| no | nil | Returns error |
-
-### Go Types
-
-Fields resolved from env vars use `json:"-"` (excluded from serialization):
-
-- `Config.Telegram.Token` -- resolved from `TokenEnv`
-- `Config.Providers[].APIKey` -- resolved from `APIKeyEnv`
-- `Config.AllowedUserIDs` -- parsed from `AllowedUserIDsEnv`
-- `Config.SystemPrompt` -- uses `json:"system_prompt,omitempty"`
-
-### Prompt Assembly (`buildMessages`)
-
-```go
-func buildMessages(history []provider.Message, memories []store.Memory, userText string, customPrompt string) []provider.Message
-```
-
-Returns `[system, ...history, user]`. If `customPrompt` is non-empty, it replaces `defaultSystemPrompt`. Memories are appended after the prompt with the header "You know the following about the user:".
-
-### Validation
-
-| Rule | Behavior |
-|------|----------|
-| HTTPPort range | Must be 0--65535; returns error otherwise |
-| AllowedUserIDs format | Each entry must be valid int64 |
-| LogLevel, Telegram token, provider type | Not validated |
 
 ## Troubleshooting
 
@@ -191,3 +177,8 @@ Returns `[system, ...history, user]`. If `customPrompt` is non-empty, it replace
 | `parse allowed user IDs: invalid user ID "abc"` | Non-numeric user ID | User IDs must be integers |
 | Bot ignores messages | User ID not whitelisted | Verify your ID is in `ALLOWED_USER_IDS` and the env var is set |
 | Provider auth errors | Secret not resolving | `token_env` holds the var **name**, not the secret itself |
+| `provider auth failure status=401` | API key invalid or expired | Update API key in `.env`, restart |
+| `provider unreachable` | Network issue or API down | Wait for recovery; Herald retries per message |
+| `claude CLI not found on PATH` | Claude Code CLI not installed | Install Claude Code CLI (requires Node.js) |
+| `no providers configured` | Empty providers array | At least one provider must be in config |
+| Photos fail after update | Model lacks vision support | Confirm vision-capable model in config (look for `VL` suffix) |
