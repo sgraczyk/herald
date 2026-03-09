@@ -96,6 +96,11 @@ internal/
     db.go                    # bbolt init (go.etcd.io/bbolt, pure Go)
     history.go               # Conversation history per chat (bucket per chat_id)
     memory.go                # Long-term memory per chat (facts, preferences)
+docs/
+  configuration.md             # Config file reference, providers, system prompt
+  deployment.md                # User whitelist, systemd, credential management
+  features.md                  # Memory, images, responses, personality, commands
+  logging.md                   # Structured logging reference (slog levels, fields)
 config.json.example
 .env.example
 go.mod
