@@ -85,6 +85,11 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 	}
 
 	msg := update.Message
+	if msg.From == nil {
+		slog.Debug("ignoring message with nil From field", slog.Int64("chat_id", msg.Chat.ID))
+		return
+	}
+
 	userID := msg.From.ID
 	chatID := msg.Chat.ID
 
