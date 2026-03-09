@@ -39,7 +39,24 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test -race -coverprofile=coverage.out ./...
-      - uses: codecov/codecov-action@v5
+      - name: Coverage summary
+        id: coverage
+        run: |
+          go tool cover -func=coverage.out
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')
+          echo "## Test Coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Total: ${total}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "total=${total}" >> "$GITHUB_OUTPUT"
+          echo "total_num=${total%%%}" >> "$GITHUB_OUTPUT"
+      - name: Update coverage badge
+        if: github.ref == 'refs/heads/main'
+        uses: schneegans/dynamic-badges-action@v1.7.0
         with:
-          files: coverage.out
-          token: ${{ secrets.CODECOV_TOKEN }}
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: ${{ vars.COVERAGE_GIST_ID }}
+          filename: coverage.json
+          label: coverage
+          message: ${{ steps.coverage.outputs.total }}
+          valColorRange: ${{ steps.coverage.outputs.total_num }}
+          minColorRange: 0
+          maxColorRange: 100

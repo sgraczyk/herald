@@ -3,7 +3,7 @@
 Lightweight, self-hosted AI assistant bot for Telegram.
 
 [![CI](https://github.com/sgraczyk/herald/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sgraczyk/herald/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/sgraczyk/herald/graph/badge.svg)](https://codecov.io/gh/sgraczyk/herald)
+![coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/sgraczyk/COVERAGE_GIST_ID/raw/coverage.json)
 [![Release](https://img.shields.io/github/v/release/sgraczyk/herald)](https://github.com/sgraczyk/herald/releases/latest)
 
 ## Features
