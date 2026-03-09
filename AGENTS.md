@@ -217,8 +217,16 @@ Two GitHub Actions workflows in `.github/workflows/`:
 
 **CI** (`ci.yml`) — runs on push/PR to `main`:
 - **lint:** `go vet ./...` + `staticcheck` (via `dominikh/staticcheck-action`)
+- **vulncheck:** `golang/govulncheck-action@v1` (fails on known vulnerabilities in dependencies)
 - **build:** `go build ./cmd/herald` (verifies compilation with `CGO_ENABLED=0`)
-- **test:** `go test -race ./...` (race detector enabled via `CGO_ENABLED=1`)
+- **test:** `go test -race -coverprofile=coverage.out ./...` (race detector enabled via `CGO_ENABLED=1`)
+  - **Coverage summary:** parses `coverage.out` with `go tool cover -func`, writes total percentage to GitHub Actions step summary, exports `total` and `total_num` outputs
+  - **Badge update (main only):** `schneegans/dynamic-badges-action@v1.7.0` writes coverage percentage to a GitHub Gist; shields.io endpoint badge in README reads it
+
+| Name | Kind | Purpose |
+|------|------|---------|
+| `GIST_TOKEN` | Repository secret | PAT with `gist` scope, used by the badge action to write `coverage.json` |
+| `COVERAGE_GIST_ID` | Repository variable | ID of the GitHub Gist storing `coverage.json` |
 
 **Release Please** (`release-please.yml`) — runs on push to `main`:
 - Uses `googleapis/release-please-action@v4` to create/update Release PRs
