@@ -156,9 +156,9 @@ herald.db (single file)
 | Parameter | Value |
 |-----------|-------|
 | Container | LXC on Proxmox (Debian minimal) |
-| CT ID | 107 |
-| IP | 192.168.0.107 |
-| DNS | `ai.internal` (via Caddy) |
+| CT ID | `<your-ct-id>` |
+| IP | `<your-host-ip>` |
+| DNS | `<your-internal-dns>` (via reverse proxy) |
 | Resources | 1 CPU, 512 MB RAM, 4 GB disk |
 | Runtime deps | Claude Code CLI (Node.js), herald binary |
 | Service | systemd unit, auto-restart |
@@ -239,8 +239,8 @@ Releases are automated via [release-please](https://github.com/googleapis/releas
 
 ```bash
 # Example deploy
-scp herald-linux-amd64 root@192.168.0.107:/usr/local/bin/herald
-ssh root@192.168.0.107 systemctl restart herald
+scp herald-linux-amd64 root@<your-host-ip>:/usr/local/bin/herald
+ssh root@<your-host-ip> systemctl restart herald
 ```
 
 Versioning: [semver](https://semver.org/). Managed by release-please based on conventional commits. Config in `release-please-config.json` and `.release-please-manifest.json`.
