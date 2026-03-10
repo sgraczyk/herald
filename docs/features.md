@@ -68,7 +68,7 @@ Telegram limits individual messages to 4096 bytes. When a response exceeds this,
 2. **Line breaks** -- used if no paragraph break fits
 3. **Word boundaries** -- last resort before hard cut
 
-Bold, italic, code blocks, links, and other formatting carry over between split messages. If a formatted span crosses a split point, Herald closes the formatting at the end of one message and reopens it at the start of the next.
+Bold, italic, code blocks, links, and other formatting carry over between split messages. If a formatted span crosses a split point, Herald closes the formatting at the end of one message and reopens it at the start of the next. See [Formatting](formatting.md) for the full list of supported Markdown elements and how they map to Telegram HTML.
 
 Each chunk has independent error handling -- if HTML rendering fails, that chunk is retried as plain text.
 
