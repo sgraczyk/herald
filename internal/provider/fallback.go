@@ -9,12 +9,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sgraczyk/herald/internal/metrics"
 )
 
 // Fallback tries providers in order and returns the first successful response.
 type Fallback struct {
 	providers  []LLMProvider
 	maxRetries int
+	metrics    *metrics.Metrics
 
 	mu     sync.RWMutex
 	active string // name of the currently active provider
@@ -22,8 +25,8 @@ type Fallback struct {
 
 // NewFallback creates a fallback chain from the given providers.
 // maxRetries controls how many times a transient error is retried per provider
-// (0 disables retry).
-func NewFallback(providers []LLMProvider, maxRetries int) *Fallback {
+// (0 disables retry). If m is nil, no metrics are recorded.
+func NewFallback(providers []LLMProvider, maxRetries int, m *metrics.Metrics) *Fallback {
 	name := ""
 	if len(providers) > 0 {
 		name = providers[0].Name()
@@ -31,6 +34,7 @@ func NewFallback(providers []LLMProvider, maxRetries int) *Fallback {
 	return &Fallback{
 		providers:  providers,
 		maxRetries: maxRetries,
+		metrics:    m,
 		active:     name,
 	}
 }
@@ -71,8 +75,14 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 		var result string
 		var err error
 		for attempt := 0; attempt <= retries; attempt++ {
+			start := time.Now()
 			result, err = p.Chat(ctx, messages)
+			elapsed := time.Since(start)
 			if err == nil {
+				if f.metrics != nil {
+					f.metrics.IncProviderCall(p.Name())
+					f.metrics.ObserveLatency(p.Name(), elapsed)
+				}
 				f.mu.Lock()
 				f.active = p.Name()
 				f.mu.Unlock()
@@ -99,6 +109,9 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 			break
 		}
 
+		if f.metrics != nil {
+			f.metrics.IncProviderError(p.Name())
+		}
 		if errors.Is(err, ErrAuthFailure) {
 			hasAuthErr = true
 			slog.Warn("provider auth failure", slog.String("provider", p.Name()))

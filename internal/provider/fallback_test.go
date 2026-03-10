@@ -27,7 +27,7 @@ func TestFallbackFirstSuccess(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "primary", response: "ok"},
 		&stubProvider{name: "secondary", response: "fallback"},
-	}, 0)
+	}, 0, nil)
 
 	got, err := fb.Chat(context.Background(), nil)
 	if err != nil {
@@ -45,7 +45,7 @@ func TestFallbackToSecond(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "primary", err: fmt.Errorf("down")},
 		&stubProvider{name: "secondary", response: "fallback"},
-	}, 0)
+	}, 0, nil)
 
 	got, err := fb.Chat(context.Background(), nil)
 	if err != nil {
@@ -63,7 +63,7 @@ func TestFallbackAllFail(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "a", err: fmt.Errorf("fail-a")},
 		&stubProvider{name: "b", err: fmt.Errorf("fail-b")},
-	}, 0)
+	}, 0, nil)
 
 	_, err := fb.Chat(context.Background(), nil)
 	if err == nil {
@@ -75,7 +75,7 @@ func TestFallbackSetActive(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "a", response: "from-a"},
 		&stubProvider{name: "b", response: "from-b"},
-	}, 0)
+	}, 0, nil)
 
 	if err := fb.SetActive("b"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -93,7 +93,7 @@ func TestFallbackSetActive(t *testing.T) {
 func TestFallbackSetActiveUnknown(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "a"},
-	}, 0)
+	}, 0, nil)
 
 	if err := fb.SetActive("nonexistent"); err == nil {
 		t.Fatal("expected error for unknown provider")
@@ -105,7 +105,7 @@ func TestFallbackAuthErrorPropagated(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude", err: authErr},
 		&stubProvider{name: "backup", err: fmt.Errorf("also down")},
-	}, 0)
+	}, 0, nil)
 
 	_, err := fb.Chat(context.Background(), nil)
 	if err == nil {
@@ -121,7 +121,7 @@ func TestFallbackAuthErrorFallsThrough(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude", err: authErr},
 		&stubProvider{name: "backup", response: "fallback ok"},
-	}, 0)
+	}, 0, nil)
 
 	got, err := fb.Chat(context.Background(), nil)
 	if err != nil {
@@ -140,7 +140,7 @@ func TestFallbackTimeoutPropagated(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude", err: timeoutErr},
 		&stubProvider{name: "backup", err: fmt.Errorf("also down")},
-	}, 0)
+	}, 0, nil)
 
 	_, err := fb.Chat(context.Background(), nil)
 	if err == nil {
@@ -155,7 +155,7 @@ func TestFallbackAuthTakesPrecedenceOverTimeout(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude", err: fmt.Errorf("execute claude: %w: deadline exceeded", ErrTimeout)},
 		&stubProvider{name: "backup", err: fmt.Errorf("bad key: %w", ErrAuthFailure)},
-	}, 0)
+	}, 0, nil)
 
 	_, err := fb.Chat(context.Background(), nil)
 	if err == nil {
@@ -174,7 +174,7 @@ func TestFallbackProviders(t *testing.T) {
 		&stubProvider{name: "a"},
 		&stubProvider{name: "b"},
 	}
-	fb := NewFallback(providers, 0)
+	fb := NewFallback(providers, 0, nil)
 
 	got := fb.Providers()
 	if len(got) != 2 {
@@ -196,7 +196,7 @@ func TestFallbackImageRoutesToOpenAI(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude", response: "from claude"},
 		NewOpenAI("openai", srv.URL, "model", "key"),
-	}, 0)
+	}, 0, nil)
 
 	// Image message — claude should be skipped, openai should be tried.
 	msgs := []Message{{Role: "user", Content: "test", Images: []ImageData{{Base64: "abc", MimeType: "image/jpeg"}}}}
@@ -215,7 +215,7 @@ func TestFallbackImageRoutesToOpenAI(t *testing.T) {
 func TestFallbackImageNoVisionProvider(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude"},
-	}, 0)
+	}, 0, nil)
 
 	msgs := []Message{{Role: "user", Content: "test", Images: []ImageData{{Base64: "abc", MimeType: "image/jpeg"}}}}
 	_, err := fb.Chat(context.Background(), msgs)
@@ -231,7 +231,7 @@ func TestFallbackTextUnaffectedByImageRouting(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude", response: "from claude"},
 		NewOpenAI("openai", "http://invalid", "model", "key"),
-	}, 0)
+	}, 0, nil)
 
 	// Text-only message should use normal fallback (claude first).
 	got, err := fb.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}})
@@ -268,7 +268,7 @@ func TestRetryTransientError(t *testing.T) {
 		failErr:   &HTTPStatusError{Code: 503, Body: "service unavailable"},
 		response:  "ok",
 	}
-	fb := NewFallback([]LLMProvider{p}, 2)
+	fb := NewFallback([]LLMProvider{p}, 2, nil)
 
 	got, err := fb.Chat(context.Background(), nil)
 	if err != nil {
@@ -289,7 +289,7 @@ func TestNoRetryNonTransientError(t *testing.T) {
 		failErr:   fmt.Errorf("bad request: %w", ErrAuthFailure),
 		response:  "ok",
 	}
-	fb := NewFallback([]LLMProvider{p}, 2)
+	fb := NewFallback([]LLMProvider{p}, 2, nil)
 
 	_, err := fb.Chat(context.Background(), nil)
 	if err == nil {
@@ -307,7 +307,7 @@ func TestRetryDisabledWithZero(t *testing.T) {
 		failErr:   &HTTPStatusError{Code: 503, Body: "service unavailable"},
 		response:  "ok",
 	}
-	fb := NewFallback([]LLMProvider{p}, 0)
+	fb := NewFallback([]LLMProvider{p}, 0, nil)
 
 	_, err := fb.Chat(context.Background(), nil)
 	if err == nil {
@@ -325,7 +325,7 @@ func TestRetryContextCancellation(t *testing.T) {
 		failErr:   &HTTPStatusError{Code: 500, Body: "internal error"},
 		response:  "ok",
 	}
-	fb := NewFallback([]LLMProvider{p}, 5)
+	fb := NewFallback([]LLMProvider{p}, 5, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	// Cancel immediately so the backoff select picks up ctx.Done().
@@ -344,7 +344,7 @@ func TestRetryBackoffDuration(t *testing.T) {
 		failErr:   &HTTPStatusError{Code: 502, Body: "bad gateway"},
 		response:  "ok",
 	}
-	fb := NewFallback([]LLMProvider{p}, 3)
+	fb := NewFallback([]LLMProvider{p}, 3, nil)
 
 	start := time.Now()
 	got, err := fb.Chat(context.Background(), nil)

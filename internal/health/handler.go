@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/sgraczyk/herald/internal/metrics"
 )
 
 // NameProvider returns a display name. It is called on every request so the
@@ -35,7 +37,7 @@ type response struct {
 	TokenExpires string `json:"token_expires,omitempty"`
 }
 
-// Server serves the health endpoint.
+// Server serves the health and metrics endpoints.
 type Server struct {
 	port         int
 	version      string
@@ -43,10 +45,12 @@ type Server struct {
 	provider     NameProvider
 	claude       ProviderStatus
 	tokenExpires string
+	metrics      *metrics.Metrics
 }
 
-// NewServer creates a health server.
-func NewServer(port int, version string, startTime time.Time, provider NameProvider, claude ProviderStatus, tokenExpires string) *Server {
+// NewServer creates a health server. If m is non-nil, a GET /metrics endpoint
+// is registered alongside the health endpoint.
+func NewServer(port int, version string, startTime time.Time, provider NameProvider, claude ProviderStatus, tokenExpires string, m *metrics.Metrics) *Server {
 	return &Server{
 		port:         port,
 		version:      version,
@@ -54,6 +58,7 @@ func NewServer(port int, version string, startTime time.Time, provider NameProvi
 		provider:     provider,
 		claude:       claude,
 		tokenExpires: tokenExpires,
+		metrics:      m,
 	}
 }
 
@@ -62,6 +67,9 @@ func NewServer(port int, version string, startTime time.Time, provider NameProvi
 func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
+	if s.metrics != nil {
+		mux.HandleFunc("GET /metrics", s.metrics.Handler())
+	}
 
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/sgraczyk/herald/internal/config"
 	"github.com/sgraczyk/herald/internal/health"
 	"github.com/sgraczyk/herald/internal/hub"
+	"github.com/sgraczyk/herald/internal/metrics"
 	"github.com/sgraczyk/herald/internal/provider"
 	"github.com/sgraczyk/herald/internal/store"
 	"github.com/sgraczyk/herald/internal/telegram"
@@ -100,13 +101,21 @@ func serve(configPath string) error {
 		return fmt.Errorf("no providers configured")
 	}
 	provider.ValidateProviders(context.Background(), providers)
-	chain := provider.NewFallback(providers, *cfg.MaxRetries)
+
+	// Create metrics.
+	providerNames := make([]string, len(providers))
+	for i, p := range providers {
+		providerNames[i] = p.Name()
+	}
+	m := metrics.New(providerNames)
+
+	chain := provider.NewFallback(providers, *cfg.MaxRetries, m)
 
 	// Create hub.
 	h := hub.New()
 
 	// Create agent loop.
-	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.HistoryTokenBudget, cfg.SystemPrompt)
+	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.HistoryTokenBudget, cfg.SystemPrompt, m)
 
 	// Create Telegram adapter.
 	tg, err := telegram.New(cfg.Telegram.Token, h, cfg.AllowedUserIDs)
@@ -134,12 +143,15 @@ func serve(configPath string) error {
 				break
 			}
 		}
-		srv := health.NewServer(cfg.HTTPPort, version, loop.StartTime(), chain, claude, tokenExpires)
+		srv := health.NewServer(cfg.HTTPPort, version, loop.StartTime(), chain, claude, tokenExpires, m)
 		if err := srv.Start(ctx); err != nil {
 			return fmt.Errorf("start health server: %w", err)
 		}
 		slog.Info("health endpoint started", slog.Int("port", cfg.HTTPPort))
 	}
+
+	// Start periodic metrics logging (every hour).
+	m.StartPeriodicLog(ctx, time.Hour)
 
 	// Start agent loop.
 	go loop.Run(ctx)
