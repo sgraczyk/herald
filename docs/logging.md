@@ -75,6 +75,8 @@ All log entries use typed key-value fields. Common fields:
 | `messages_removed` | int | Number of old messages trimmed by token budget |
 | `tokens_used` | int | Estimated tokens in the kept messages |
 | `token_budget` | int | Configured token budget |
+| `attempt` | int | Retry attempt number (provider retry logs) |
+| `backoff` | duration | Backoff delay before next retry |
 
 ## Troubleshooting
 
