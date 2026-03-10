@@ -393,7 +393,7 @@ func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assi
 		return
 	}
 	if l.metrics != nil {
-		l.metrics.IncExtraction()
+		l.metrics.IncExtractionSuccess()
 	}
 
 	// Parse JSON array from response. The LLM may wrap it in markdown fences.

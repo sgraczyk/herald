@@ -25,8 +25,8 @@ func TestIncrement(t *testing.T) {
 	m.ObserveLatency("claude", 100*time.Millisecond)
 	m.ObserveLatency("claude", 200*time.Millisecond)
 
-	m.IncExtraction()
-	m.IncExtraction()
+	m.IncExtractionSuccess()
+	m.IncExtractionSuccess()
 	m.IncExtractionFailure()
 
 	snap := m.Snapshot()
@@ -64,8 +64,8 @@ func TestIncrement(t *testing.T) {
 		t.Errorf("provider_latency_ms_count[claude] = %d, want 2", got)
 	}
 
-	if got := snap["memory_extractions"].(int64); got != 2 {
-		t.Errorf("memory_extractions = %d, want 2", got)
+	if got := snap["memory_extraction_successes"].(int64); got != 2 {
+		t.Errorf("memory_extraction_successes =%d, want 2", got)
 	}
 	if got := snap["memory_extraction_failures"].(int64); got != 1 {
 		t.Errorf("memory_extraction_failures = %d, want 1", got)
@@ -113,7 +113,7 @@ func TestConcurrentIncrements(t *testing.T) {
 			m.IncProviderCall("p1")
 			m.IncProviderError("p1")
 			m.ObserveLatency("p1", time.Millisecond)
-			m.IncExtraction()
+			m.IncExtractionSuccess()
 			m.IncExtractionFailure()
 		}()
 	}

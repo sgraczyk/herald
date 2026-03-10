@@ -94,8 +94,8 @@ func (m *Metrics) ObserveLatency(name string, d time.Duration) {
 	m.mu.Unlock()
 }
 
-// IncExtraction increments the memory_extractions counter.
-func (m *Metrics) IncExtraction() {
+// IncExtractionSuccess increments the memory_extraction_successes counter.
+func (m *Metrics) IncExtractionSuccess() {
 	m.mu.Lock()
 	m.memoryExtractions++
 	m.mu.Unlock()
@@ -140,7 +140,7 @@ func (m *Metrics) Snapshot() map[string]any {
 		"provider_errors":             providerErrors,
 		"provider_latency_ms_total":   providerLatencyMs,
 		"provider_latency_ms_count":   providerLatencyCnt,
-		"memory_extractions":          m.memoryExtractions,
+		"memory_extraction_successes":  m.memoryExtractions,
 		"memory_extraction_failures":  m.memoryExtractionFailures,
 	}
 }
@@ -158,7 +158,7 @@ func (m *Metrics) LogSummary() {
 		slog.Any("provider_errors", snap["provider_errors"]),
 		slog.Any("provider_latency_ms_total", snap["provider_latency_ms_total"]),
 		slog.Any("provider_latency_ms_count", snap["provider_latency_ms_count"]),
-		slog.Any("memory_extractions", snap["memory_extractions"]),
+		slog.Any("memory_extraction_successes", snap["memory_extraction_successes"]),
 		slog.Any("memory_extraction_failures", snap["memory_extraction_failures"]),
 	)
 }
@@ -185,6 +185,8 @@ func (m *Metrics) StartPeriodicLog(ctx context.Context, interval time.Duration) 
 func (m *Metrics) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(m.Snapshot())
+		if err := json.NewEncoder(w).Encode(m.Snapshot()); err != nil {
+			slog.Error("encode metrics response failed", slog.String("error", err.Error()))
+		}
 	}
 }
