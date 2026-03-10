@@ -91,6 +91,7 @@ docs/
   deployment.md              # User whitelist, systemd, credential management
   features.md                # Memory, images, responses, personality, commands
   formatting.md              # Markdown to Telegram HTML formatting
+  godoc.md                   # Doc comment conventions and browsing godoc
   logging.md                 # Structured logging reference (slog levels, fields)
 ```
 

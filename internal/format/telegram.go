@@ -1,3 +1,5 @@
+// Package format converts markdown to Telegram-compatible HTML and handles
+// message splitting for Telegram length limits.
 package format
 
 import (

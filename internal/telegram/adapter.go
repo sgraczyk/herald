@@ -1,3 +1,4 @@
+// Package telegram connects Herald to the Telegram Bot API via long polling.
 package telegram
 
 import (

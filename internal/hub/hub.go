@@ -1,3 +1,5 @@
+// Package hub provides the message routing channels between the Telegram
+// adapter and the agent loop.
 package hub
 
 // ImageAttachment holds a base64-encoded image from Telegram.

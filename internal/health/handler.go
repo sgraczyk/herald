@@ -1,3 +1,4 @@
+// Package health serves an HTTP health check endpoint reporting Herald's status.
 package health
 
 import (
@@ -13,12 +14,15 @@ import (
 // NameProvider returns a display name. It is called on every request so the
 // value can change at runtime (e.g. after a provider switch).
 type NameProvider interface {
+	// Name returns the display name of the active provider.
 	Name() string
 }
 
 // ProviderStatus provides dynamic provider information for the health endpoint.
 type ProviderStatus interface {
+	// Name returns the provider name.
 	Name() string
+	// AuthStatus returns the last known auth status ("ok", "auth_error", or "").
 	AuthStatus() string
 }
 
