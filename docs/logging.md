@@ -78,6 +78,25 @@ All log entries use typed key-value fields. Common fields:
 | `attempt` | int | Retry attempt number (provider retry logs) |
 | `backoff` | duration | Backoff delay before next retry |
 
+## Metrics Summary
+
+Herald logs a `"metrics summary"` entry at INFO level every hour and once on shutdown. This line includes all runtime counters as structured fields:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `messages_received` | int64 | Total incoming messages processed |
+| `responses_sent` | int64 | Total successful responses |
+| `messages_failed` | int64 | Total messages where all providers failed |
+| `provider_calls` | string (JSON) | Successful calls per provider |
+| `provider_errors` | string (JSON) | Failed calls per provider |
+| `provider_latency_ms_total` | string (JSON) | Cumulative latency in ms per provider |
+| `provider_latency_ms_count` | string (JSON) | Number of latency observations per provider |
+| `memory_extraction_successes` | int64 | Successful memory extractions |
+| `memory_extraction_failures` | int64 | Failed memory extractions |
+| `uptime_seconds` | float64 | Seconds since process start |
+
+All counters reset on process restart.
+
 ## Troubleshooting
 
 **Want more detail?** Set `LOG_LEVEL=debug` to see typing indicator failures, memory extraction attempts, and response parse failures.

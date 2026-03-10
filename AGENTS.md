@@ -72,6 +72,8 @@ internal/
     handler.go               # HTTP health check endpoint
   hub/
     hub.go                   # Message hub: fan-in/fan-out via Go channels
+  metrics/
+    metrics.go               # In-memory counters and JSON endpoint
   provider/
     provider.go              # LLMProvider interface + Message type
     claude.go                # claude -p backend (exec, parse JSON output)
