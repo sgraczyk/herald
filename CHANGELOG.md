@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.0](https://github.com/sgraczyk/herald/compare/v0.3.1...v0.4.0) (2026-03-10)
+
+
+### Features
+
+* **config:** embed config.json.example as built-in defaults ([#109](https://github.com/sgraczyk/herald/issues/109)) ([ac2a5e4](https://github.com/sgraczyk/herald/commit/ac2a5e4667ee44d406f2dc2a90f59e05e84c0095))
+
+
+### Bug Fixes
+
+* **provider:** use per-chute subdomain URL for Chutes.ai ([#107](https://github.com/sgraczyk/herald/issues/107)) ([3a41d9a](https://github.com/sgraczyk/herald/commit/3a41d9afc68a66e6aa98ccf0b109c226ec796602))
+* **telegram:** add nil check for Message.From in handleUpdate ([#125](https://github.com/sgraczyk/herald/issues/125)) ([88eea0f](https://github.com/sgraczyk/herald/commit/88eea0fb9c4a73ec75ca17f17108dbe2488ec206))
+
+
+### Performance Improvements
+
+* **format:** reuse singleton goldmark instance ([#129](https://github.com/sgraczyk/herald/issues/129)) ([c191015](https://github.com/sgraczyk/herald/commit/c19101596d2580b635063c74957838775dce2fb6))
+
 ## [0.3.1](https://github.com/sgraczyk/herald/compare/v0.3.0...v0.3.1) (2026-03-08)
 
 
