@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 type stubProvider struct {
@@ -25,7 +27,7 @@ func TestFallbackFirstSuccess(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "primary", response: "ok"},
 		&stubProvider{name: "secondary", response: "fallback"},
-	})
+	}, 0)
 
 	got, err := fb.Chat(context.Background(), nil)
 	if err != nil {
@@ -43,7 +45,7 @@ func TestFallbackToSecond(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "primary", err: fmt.Errorf("down")},
 		&stubProvider{name: "secondary", response: "fallback"},
-	})
+	}, 0)
 
 	got, err := fb.Chat(context.Background(), nil)
 	if err != nil {
@@ -61,7 +63,7 @@ func TestFallbackAllFail(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "a", err: fmt.Errorf("fail-a")},
 		&stubProvider{name: "b", err: fmt.Errorf("fail-b")},
-	})
+	}, 0)
 
 	_, err := fb.Chat(context.Background(), nil)
 	if err == nil {
@@ -73,7 +75,7 @@ func TestFallbackSetActive(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "a", response: "from-a"},
 		&stubProvider{name: "b", response: "from-b"},
-	})
+	}, 0)
 
 	if err := fb.SetActive("b"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -91,7 +93,7 @@ func TestFallbackSetActive(t *testing.T) {
 func TestFallbackSetActiveUnknown(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "a"},
-	})
+	}, 0)
 
 	if err := fb.SetActive("nonexistent"); err == nil {
 		t.Fatal("expected error for unknown provider")
@@ -103,7 +105,7 @@ func TestFallbackAuthErrorPropagated(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude", err: authErr},
 		&stubProvider{name: "backup", err: fmt.Errorf("also down")},
-	})
+	}, 0)
 
 	_, err := fb.Chat(context.Background(), nil)
 	if err == nil {
@@ -119,7 +121,7 @@ func TestFallbackAuthErrorFallsThrough(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude", err: authErr},
 		&stubProvider{name: "backup", response: "fallback ok"},
-	})
+	}, 0)
 
 	got, err := fb.Chat(context.Background(), nil)
 	if err != nil {
@@ -138,7 +140,7 @@ func TestFallbackTimeoutPropagated(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude", err: timeoutErr},
 		&stubProvider{name: "backup", err: fmt.Errorf("also down")},
-	})
+	}, 0)
 
 	_, err := fb.Chat(context.Background(), nil)
 	if err == nil {
@@ -153,7 +155,7 @@ func TestFallbackAuthTakesPrecedenceOverTimeout(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude", err: fmt.Errorf("execute claude: %w: deadline exceeded", ErrTimeout)},
 		&stubProvider{name: "backup", err: fmt.Errorf("bad key: %w", ErrAuthFailure)},
-	})
+	}, 0)
 
 	_, err := fb.Chat(context.Background(), nil)
 	if err == nil {
@@ -172,7 +174,7 @@ func TestFallbackProviders(t *testing.T) {
 		&stubProvider{name: "a"},
 		&stubProvider{name: "b"},
 	}
-	fb := NewFallback(providers)
+	fb := NewFallback(providers, 0)
 
 	got := fb.Providers()
 	if len(got) != 2 {
@@ -194,7 +196,7 @@ func TestFallbackImageRoutesToOpenAI(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude", response: "from claude"},
 		NewOpenAI("openai", srv.URL, "model", "key"),
-	})
+	}, 0)
 
 	// Image message — claude should be skipped, openai should be tried.
 	msgs := []Message{{Role: "user", Content: "test", Images: []ImageData{{Base64: "abc", MimeType: "image/jpeg"}}}}
@@ -213,7 +215,7 @@ func TestFallbackImageRoutesToOpenAI(t *testing.T) {
 func TestFallbackImageNoVisionProvider(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude"},
-	})
+	}, 0)
 
 	msgs := []Message{{Role: "user", Content: "test", Images: []ImageData{{Base64: "abc", MimeType: "image/jpeg"}}}}
 	_, err := fb.Chat(context.Background(), msgs)
@@ -229,7 +231,7 @@ func TestFallbackTextUnaffectedByImageRouting(t *testing.T) {
 	fb := NewFallback([]LLMProvider{
 		&stubProvider{name: "claude", response: "from claude"},
 		NewOpenAI("openai", "http://invalid", "model", "key"),
-	})
+	}, 0)
 
 	// Text-only message should use normal fallback (claude first).
 	got, err := fb.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}})
@@ -240,3 +242,163 @@ func TestFallbackTextUnaffectedByImageRouting(t *testing.T) {
 		t.Errorf("expected 'from claude', got %q", got)
 	}
 }
+
+// countingProvider tracks call count and returns an error for the first N calls.
+type countingProvider struct {
+	name      string
+	failCount int // number of initial calls that fail
+	failErr   error
+	response  string
+	calls     int
+}
+
+func (c *countingProvider) Name() string { return c.name }
+func (c *countingProvider) Chat(_ context.Context, _ []Message) (string, error) {
+	c.calls++
+	if c.calls <= c.failCount {
+		return "", c.failErr
+	}
+	return c.response, nil
+}
+
+func TestRetryTransientError(t *testing.T) {
+	p := &countingProvider{
+		name:      "openai",
+		failCount: 1,
+		failErr:   &HTTPStatusError{Code: 503, Body: "service unavailable"},
+		response:  "ok",
+	}
+	fb := NewFallback([]LLMProvider{p}, 2)
+
+	got, err := fb.Chat(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "ok" {
+		t.Errorf("expected 'ok', got %q", got)
+	}
+	if p.calls != 2 {
+		t.Errorf("expected 2 calls (1 fail + 1 success), got %d", p.calls)
+	}
+}
+
+func TestNoRetryNonTransientError(t *testing.T) {
+	p := &countingProvider{
+		name:      "openai",
+		failCount: 10,
+		failErr:   fmt.Errorf("bad request: %w", ErrAuthFailure),
+		response:  "ok",
+	}
+	fb := NewFallback([]LLMProvider{p}, 2)
+
+	_, err := fb.Chat(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if p.calls != 1 {
+		t.Errorf("expected 1 call (no retry for non-transient), got %d", p.calls)
+	}
+}
+
+func TestRetryDisabledWithZero(t *testing.T) {
+	p := &countingProvider{
+		name:      "openai",
+		failCount: 1,
+		failErr:   &HTTPStatusError{Code: 503, Body: "service unavailable"},
+		response:  "ok",
+	}
+	fb := NewFallback([]LLMProvider{p}, 0)
+
+	_, err := fb.Chat(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected error with retry disabled")
+	}
+	if p.calls != 1 {
+		t.Errorf("expected 1 call (retry disabled), got %d", p.calls)
+	}
+}
+
+func TestRetryContextCancellation(t *testing.T) {
+	p := &countingProvider{
+		name:      "openai",
+		failCount: 10,
+		failErr:   &HTTPStatusError{Code: 500, Body: "internal error"},
+		response:  "ok",
+	}
+	fb := NewFallback([]LLMProvider{p}, 5)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel immediately so the backoff select picks up ctx.Done().
+	cancel()
+
+	_, err := fb.Chat(ctx, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+}
+
+func TestRetryBackoffDuration(t *testing.T) {
+	p := &countingProvider{
+		name:      "openai",
+		failCount: 2,
+		failErr:   &HTTPStatusError{Code: 502, Body: "bad gateway"},
+		response:  "ok",
+	}
+	fb := NewFallback([]LLMProvider{p}, 3)
+
+	start := time.Now()
+	got, err := fb.Chat(context.Background(), nil)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "ok" {
+		t.Errorf("expected 'ok', got %q", got)
+	}
+	// Backoff: 1s + 2s = 3s minimum.
+	if elapsed < 3*time.Second {
+		t.Errorf("expected at least 3s backoff, got %v", elapsed)
+	}
+	if p.calls != 3 {
+		t.Errorf("expected 3 calls, got %d", p.calls)
+	}
+}
+
+func TestIsTransient(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		transient bool
+	}{
+		{"ErrTimeout", fmt.Errorf("wrapped: %w", ErrTimeout), true},
+		{"status 500", &HTTPStatusError{Code: 500, Body: "oops"}, true},
+		{"status 502", &HTTPStatusError{Code: 502, Body: "bad gw"}, true},
+		{"status 503", &HTTPStatusError{Code: 503, Body: "unavail"}, true},
+		{"status 504", &HTTPStatusError{Code: 504, Body: "timeout"}, true},
+		{"status 400", &HTTPStatusError{Code: 400, Body: "bad req"}, false},
+		{"status 429", &HTTPStatusError{Code: 429, Body: "rate limit"}, false},
+		{"ErrAuthFailure", ErrAuthFailure, false},
+		{"generic error", fmt.Errorf("something broke"), false},
+		{"net.Error timeout", &netTimeoutErr{}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isTransient(tt.err)
+			if got != tt.transient {
+				t.Errorf("isTransient(%v) = %v, want %v", tt.err, got, tt.transient)
+			}
+		})
+	}
+}
+
+// netTimeoutErr implements net.Error with Timeout() == true.
+type netTimeoutErr struct{}
+
+func (e *netTimeoutErr) Error() string   { return "network timeout" }
+func (e *netTimeoutErr) Timeout() bool   { return true }
+func (e *netTimeoutErr) Temporary() bool { return true }
+
+// Ensure netTimeoutErr satisfies net.Error.
+var _ net.Error = (*netTimeoutErr)(nil)

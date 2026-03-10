@@ -96,11 +96,24 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.HistoryTokenBudget != 8000 {
 		t.Errorf("HistoryTokenBudget = %d, want 8000", cfg.HistoryTokenBudget)
 	}
+	if cfg.MaxRetries == nil || *cfg.MaxRetries != 1 {
+		t.Errorf("MaxRetries = %v, want 1", cfg.MaxRetries)
+	}
 	if cfg.Store.Path != "herald.db" {
 		t.Errorf("Store.Path = %q, want %q", cfg.Store.Path, "herald.db")
 	}
 	if cfg.LogLevel != "info" {
 		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
+	}
+}
+
+func TestLoad_MaxRetriesExplicitZero(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `{"telegram": {"token_env": "X"}, "max_retries": 0}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MaxRetries == nil || *cfg.MaxRetries != 0 {
+		t.Errorf("MaxRetries = %v, want 0", cfg.MaxRetries)
 	}
 }
 

@@ -4,6 +4,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -14,6 +15,16 @@ var ErrAuthFailure = errors.New("provider auth failure")
 
 // ErrTimeout indicates that a provider call exceeded its deadline.
 var ErrTimeout = errors.New("provider timeout")
+
+// HTTPStatusError represents a non-OK HTTP status code from an API provider.
+type HTTPStatusError struct {
+	Code int    // HTTP status code
+	Body string // response body
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("API error (status %d): %s", e.Code, e.Body)
+}
 
 // ImageData holds a base64-encoded image for vision API requests.
 type ImageData struct {

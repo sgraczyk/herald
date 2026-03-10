@@ -30,7 +30,7 @@ func newAskCmd() *cobra.Command {
 				return fmt.Errorf("no providers configured")
 			}
 
-			chain := provider.NewFallback(providers)
+			chain := provider.NewFallback(providers, *cfg.MaxRetries)
 			question := strings.Join(args, " ")
 
 			messages := []provider.Message{
