@@ -19,20 +19,21 @@ import (
 
 // Loop reads messages from the hub, calls the provider, and writes responses back.
 type Loop struct {
-	hub               *hub.Hub
-	provider          provider.LLMProvider
-	extProvider       provider.LLMProvider // provider used for memory extraction
-	store             *store.DB
-	historyLimit      int
+	hub                *hub.Hub
+	provider           provider.LLMProvider
+	extProvider        provider.LLMProvider // provider used for memory extraction
+	store              *store.DB
+	historyLimit       int
 	historyTokenBudget int
-	systemPrompt      string
-	startTime         time.Time
-	wg                sync.WaitGroup
+	systemPrompt       string
+	startTime          time.Time
+	wg                 sync.WaitGroup
 }
 
 // NewLoop creates a new agent loop. If systemPrompt is empty, the default
 // hardcoded prompt is used. The tokenBudget parameter controls the maximum
-// estimated tokens for history; zero or negative disables token-based trimming.
+// estimated tokens for history; a negative value disables token-based trimming
+// (zero is treated as "use default" by config loading).
 func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget int, systemPrompt string) *Loop {
 	return &Loop{
 		hub:                h,

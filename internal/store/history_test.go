@@ -164,24 +164,24 @@ func TestSeparateChats(t *testing.T) {
 	}
 }
 
-func TestEstimateTokens(t *testing.T) {
+func Test_estimateTokens(t *testing.T) {
 	tt := []struct {
 		input string
 		want  int
 	}{
 		{"", 0},
-		{"a", 1},      // len=1, 1/4=0, min 1
-		{"ab", 1},     // len=2, 2/4=0, min 1
-		{"abc", 1},    // len=3, 3/4=0, min 1
-		{"abcd", 1},   // len=4, 4/4=1
-		{"abcde", 1},  // len=5, 5/4=1
+		{"a", 1},     // len=1, 1/4=0, min 1
+		{"ab", 1},    // len=2, 2/4=0, min 1
+		{"abc", 1},   // len=3, 3/4=0, min 1
+		{"abcd", 1},  // len=4, 4/4=1
+		{"abcde", 1}, // len=5, 5/4=1
 		{"12345678", 2},
 		{string(make([]byte, 400)), 100},
 	}
 	for _, tc := range tt {
-		got := EstimateTokens(tc.input)
+		got := estimateTokens(tc.input)
 		if got != tc.want {
-			t.Errorf("EstimateTokens(len=%d) = %d, want %d", len(tc.input), got, tc.want)
+			t.Errorf("estimateTokens(len=%d) = %d, want %d", len(tc.input), got, tc.want)
 		}
 	}
 }

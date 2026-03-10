@@ -10,9 +10,9 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-// EstimateTokens returns a rough token count for text using the len/4
+// estimateTokens returns a rough token count for text using the len/4
 // heuristic. Non-empty text always returns at least 1.
-func EstimateTokens(text string) int {
+func estimateTokens(text string) int {
 	if len(text) == 0 {
 		return 0
 	}
@@ -82,11 +82,10 @@ func (d *DB) List(chatID int64) ([]provider.Message, error) {
 }
 
 // ListWithTokenBudget returns messages for a chat, trimming the oldest
-// messages so the total estimated tokens fit within budget. If budget is
-// zero or negative, all messages are returned (token trimming disabled).
-// The message count hard cap (limit) is applied first when limit > 0.
-// A single message that exceeds the budget is still returned to avoid
-// returning an empty history.
+// messages so the total estimated tokens fit within budget. A negative
+// budget disables token trimming. The message count hard cap (limit) is
+// applied first when limit > 0. A single message that exceeds the budget
+// is still returned to avoid returning an empty history.
 func (d *DB) ListWithTokenBudget(chatID int64, limit, budget int) ([]provider.Message, error) {
 	msgs, err := d.List(chatID)
 	if err != nil {
@@ -107,7 +106,7 @@ func (d *DB) ListWithTokenBudget(chatID int64, limit, budget int) ([]provider.Me
 	total := 0
 	cutoff := 0
 	for i := len(msgs) - 1; i >= 0; i-- {
-		total += EstimateTokens(msgs[i].Content)
+		total += estimateTokens(msgs[i].Content)
 		if total > budget {
 			cutoff = i + 1
 			break
@@ -125,7 +124,7 @@ func (d *DB) ListWithTokenBudget(chatID int64, limit, budget int) ([]provider.Me
 		slog.Info("history token trim",
 			slog.Int64("chat_id", chatID),
 			slog.Int("messages_removed", removed),
-			slog.Int("tokens_used", total-tokensForMessages(msgs[:cutoff])),
+			slog.Int("tokens_used", tokensForMessages(trimmed)),
 			slog.Int("token_budget", budget),
 		)
 	}
@@ -137,7 +136,7 @@ func (d *DB) ListWithTokenBudget(chatID int64, limit, budget int) ([]provider.Me
 func tokensForMessages(msgs []provider.Message) int {
 	total := 0
 	for _, m := range msgs {
-		total += EstimateTokens(m.Content)
+		total += estimateTokens(m.Content)
 	}
 	return total
 }
