@@ -265,7 +265,7 @@ func TestRetryTransientError(t *testing.T) {
 	p := &countingProvider{
 		name:      "openai",
 		failCount: 1,
-		failErr:   fmt.Errorf("API error (status 503): service unavailable"),
+		failErr:   &HTTPStatusError{Code: 503, Body: "service unavailable"},
 		response:  "ok",
 	}
 	fb := NewFallback([]LLMProvider{p}, 2)
@@ -304,7 +304,7 @@ func TestRetryDisabledWithZero(t *testing.T) {
 	p := &countingProvider{
 		name:      "openai",
 		failCount: 1,
-		failErr:   fmt.Errorf("API error (status 503): service unavailable"),
+		failErr:   &HTTPStatusError{Code: 503, Body: "service unavailable"},
 		response:  "ok",
 	}
 	fb := NewFallback([]LLMProvider{p}, 0)
@@ -322,7 +322,7 @@ func TestRetryContextCancellation(t *testing.T) {
 	p := &countingProvider{
 		name:      "openai",
 		failCount: 10,
-		failErr:   fmt.Errorf("API error (status 500): internal error"),
+		failErr:   &HTTPStatusError{Code: 500, Body: "internal error"},
 		response:  "ok",
 	}
 	fb := NewFallback([]LLMProvider{p}, 5)
@@ -341,7 +341,7 @@ func TestRetryBackoffDuration(t *testing.T) {
 	p := &countingProvider{
 		name:      "openai",
 		failCount: 2,
-		failErr:   fmt.Errorf("API error (status 502): bad gateway"),
+		failErr:   &HTTPStatusError{Code: 502, Body: "bad gateway"},
 		response:  "ok",
 	}
 	fb := NewFallback([]LLMProvider{p}, 3)
@@ -372,12 +372,12 @@ func TestIsTransient(t *testing.T) {
 		transient bool
 	}{
 		{"ErrTimeout", fmt.Errorf("wrapped: %w", ErrTimeout), true},
-		{"status 500", fmt.Errorf("API error (status 500): oops"), true},
-		{"status 502", fmt.Errorf("API error (status 502): bad gw"), true},
-		{"status 503", fmt.Errorf("API error (status 503): unavail"), true},
-		{"status 504", fmt.Errorf("API error (status 504): timeout"), true},
-		{"status 400", fmt.Errorf("API error (status 400): bad req"), false},
-		{"status 429", fmt.Errorf("API error (status 429): rate limit"), false},
+		{"status 500", &HTTPStatusError{Code: 500, Body: "oops"}, true},
+		{"status 502", &HTTPStatusError{Code: 502, Body: "bad gw"}, true},
+		{"status 503", &HTTPStatusError{Code: 503, Body: "unavail"}, true},
+		{"status 504", &HTTPStatusError{Code: 504, Body: "timeout"}, true},
+		{"status 400", &HTTPStatusError{Code: 400, Body: "bad req"}, false},
+		{"status 429", &HTTPStatusError{Code: 429, Body: "rate limit"}, false},
 		{"ErrAuthFailure", ErrAuthFailure, false},
 		{"generic error", fmt.Errorf("something broke"), false},
 		{"net.Error timeout", &netTimeoutErr{}, true},

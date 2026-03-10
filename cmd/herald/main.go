@@ -100,7 +100,7 @@ func serve(configPath string) error {
 		return fmt.Errorf("no providers configured")
 	}
 	provider.ValidateProviders(context.Background(), providers)
-	chain := provider.NewFallback(providers, cfg.MaxRetries)
+	chain := provider.NewFallback(providers, *cfg.MaxRetries)
 
 	// Create hub.
 	h := hub.New()

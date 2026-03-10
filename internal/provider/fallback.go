@@ -124,7 +124,7 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 
 // isTransient returns true if the error is likely transient and worth retrying.
 // It checks for net.Error (timeouts, connection errors), ErrTimeout, and
-// HTTP 5xx status codes embedded in error messages from the OpenAI provider.
+// HTTP 5xx status codes via HTTPStatusError.
 func isTransient(err error) bool {
 	if errors.Is(err, ErrTimeout) {
 		return true
@@ -135,13 +135,9 @@ func isTransient(err error) bool {
 		return true
 	}
 
-	// Check for HTTP 5xx status codes in error messages.
-	// The OpenAI provider formats errors as "API error (status NNN): ..."
-	msg := err.Error()
-	for _, code := range []string{"500", "502", "503", "504"} {
-		if strings.Contains(msg, "status "+code) {
-			return true
-		}
+	var httpErr *HTTPStatusError
+	if errors.As(err, &httpErr) {
+		return httpErr.Code >= 500 && httpErr.Code < 600
 	}
 
 	return false

@@ -90,7 +90,7 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message) (string, error) {
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 			return "", fmt.Errorf("API error (status %d): %s: %w", resp.StatusCode, respBody, ErrAuthFailure)
 		}
-		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, respBody)
+		return "", &HTTPStatusError{Code: resp.StatusCode, Body: string(respBody)}
 	}
 
 	var result openaiResponse
