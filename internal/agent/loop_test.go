@@ -517,6 +517,61 @@ func (s *sequentialProvider) Chat(_ context.Context, _ []provider.Message) (stri
 	return "[]", nil
 }
 
+func TestDrainMessagesOnShutdown(t *testing.T) {
+	mock := &mockProvider{name: "test", response: "reply"}
+	l, h, _ := testLoop(t, mock)
+
+	// Buffer messages before starting the loop.
+	h.In <- hub.InMessage{ChatID: 1, Text: "hi"}
+	h.In <- hub.InMessage{ChatID: 2, Text: "hi"}
+
+	// Start loop with an already-cancelled context so it drains immediately.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		l.Run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after draining")
+	}
+
+	// Both messages should have produced responses.
+	for i := 0; i < 2; i++ {
+		select {
+		case out := <-h.Out:
+			if out.Text != "reply" {
+				t.Errorf("expected 'reply', got %q", out.Text)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("missing output message %d", i+1)
+		}
+	}
+}
+
+func TestDrainSetsHubDraining(t *testing.T) {
+	mock := &mockProvider{name: "test", response: "ok"}
+	l, h, _ := testLoop(t, mock)
+
+	if h.Draining() {
+		t.Fatal("hub should not be draining before shutdown")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	l.Run(ctx)
+
+	if !h.Draining() {
+		t.Fatal("hub should be draining after shutdown")
+	}
+}
+
 // capturingProvider records the messages it receives.
 type capturingProvider struct {
 	responses []string

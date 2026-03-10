@@ -2,6 +2,8 @@
 // adapter and the agent loop.
 package hub
 
+import "sync/atomic"
+
 // ImageAttachment holds a base64-encoded image from Telegram.
 type ImageAttachment struct {
 	Base64   string
@@ -28,6 +30,8 @@ type Hub struct {
 	In     chan InMessage
 	Out    chan OutMessage
 	Typing chan int64 // ChatID to send typing indicator for
+
+	draining atomic.Bool
 }
 
 // New creates a new Hub with buffered channels.
@@ -37,4 +41,15 @@ func New() *Hub {
 		Out:    make(chan OutMessage, 64),
 		Typing: make(chan int64, 64),
 	}
+}
+
+// StartDrain signals the hub to stop accepting new incoming messages.
+// It is safe to call from any goroutine.
+func (h *Hub) StartDrain() {
+	h.draining.Store(true)
+}
+
+// Draining reports whether the hub is in drain mode.
+func (h *Hub) Draining() bool {
+	return h.draining.Load()
 }
