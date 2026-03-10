@@ -14,7 +14,7 @@ type Fallback struct {
 	providers []LLMProvider
 
 	mu     sync.RWMutex
-	active string // name of the last successful provider
+	active string // name of the currently active provider
 }
 
 // NewFallback creates a fallback chain from the given providers.
@@ -29,7 +29,7 @@ func NewFallback(providers []LLMProvider) *Fallback {
 	}
 }
 
-// Name returns the name of the last successful provider.
+// Name returns the name of the currently active provider.
 func (f *Fallback) Name() string {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
