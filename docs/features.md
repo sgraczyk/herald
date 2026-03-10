@@ -72,6 +72,17 @@ Bold, italic, code blocks, links, and other formatting carry over between split 
 
 Each chunk has independent error handling -- if HTML rendering fails, that chunk is retried as plain text.
 
+## Conversation History Limits
+
+Herald manages how much conversation history is sent to the AI using two independent limits:
+
+- **Message count** (`history_limit`, default 50) -- hard cap on the number of messages kept.
+- **Token budget** (`history_token_budget`, default 8000) -- estimated token cap on total history size. Oldest messages are dropped first when the budget is exceeded.
+
+Both limits apply independently. The message count cap is applied first, then the token budget trims further if needed. At least one message is always kept, even if it alone exceeds the budget. Trimming is read-only -- stored history is unchanged.
+
+To disable token trimming, set `history_token_budget` to `-1`.
+
 ## Custom Personality
 
 You can change how Herald talks by setting `system_prompt` in `config.json`. No rebuilding needed -- edit and restart.

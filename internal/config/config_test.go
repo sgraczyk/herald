@@ -25,6 +25,7 @@ const fullConfig = `{
   "store": {"path": "/tmp/test.db"},
   "http_port": 8080,
   "history_limit": 30,
+  "history_token_budget": 4000,
   "log_level": "debug",
   "system_prompt": "You are helpful.",
   "allowed_user_ids_env": "TEST_ALLOWED_IDS"
@@ -70,6 +71,9 @@ func TestLoad_FullConfig(t *testing.T) {
 	if cfg.HistoryLimit != 30 {
 		t.Errorf("HistoryLimit = %d, want 30", cfg.HistoryLimit)
 	}
+	if cfg.HistoryTokenBudget != 4000 {
+		t.Errorf("HistoryTokenBudget = %d, want 4000", cfg.HistoryTokenBudget)
+	}
 	if cfg.LogLevel != "debug" {
 		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "debug")
 	}
@@ -88,6 +92,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.HistoryLimit != 50 {
 		t.Errorf("HistoryLimit = %d, want 50", cfg.HistoryLimit)
+	}
+	if cfg.HistoryTokenBudget != 8000 {
+		t.Errorf("HistoryTokenBudget = %d, want 8000", cfg.HistoryTokenBudget)
 	}
 	if cfg.Store.Path != "herald.db" {
 		t.Errorf("Store.Path = %q, want %q", cfg.Store.Path, "herald.db")

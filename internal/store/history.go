@@ -4,10 +4,24 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/sgraczyk/herald/internal/provider"
 	bolt "go.etcd.io/bbolt"
 )
+
+// estimateTokens returns a rough token count for text using the len/4
+// heuristic. Non-empty text always returns at least 1.
+func estimateTokens(text string) int {
+	if len(text) == 0 {
+		return 0
+	}
+	n := len(text) / 4
+	if n == 0 {
+		return 1
+	}
+	return n
+}
 
 // Append adds a message to the chat's history and prunes old messages
 // if the count exceeds limit.
@@ -65,6 +79,66 @@ func (d *DB) List(chatID int64) ([]provider.Message, error) {
 	})
 
 	return msgs, err
+}
+
+// ListWithTokenBudget returns messages for a chat, trimming the oldest
+// messages so the total estimated tokens fit within budget. A negative
+// budget disables token trimming. The message count hard cap (limit) is
+// applied first when limit > 0. A single message that exceeds the budget
+// is still returned to avoid returning an empty history.
+func (d *DB) ListWithTokenBudget(chatID int64, limit, budget int) ([]provider.Message, error) {
+	msgs, err := d.List(chatID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply message count hard cap.
+	if limit > 0 && len(msgs) > limit {
+		msgs = msgs[len(msgs)-limit:]
+	}
+
+	// Skip token trimming if disabled or nothing to trim.
+	if budget <= 0 || len(msgs) <= 1 {
+		return msgs, nil
+	}
+
+	// Sum tokens from newest to oldest. Keep as many recent messages as fit.
+	total := 0
+	cutoff := 0
+	for i := len(msgs) - 1; i >= 0; i-- {
+		total += estimateTokens(msgs[i].Content)
+		if total > budget {
+			cutoff = i + 1
+			break
+		}
+	}
+
+	// Never return empty: keep at least the most recent message.
+	if cutoff >= len(msgs) {
+		cutoff = len(msgs) - 1
+	}
+
+	trimmed := msgs[cutoff:]
+	removed := len(msgs) - len(trimmed)
+	if removed > 0 {
+		slog.Info("history token trim",
+			slog.Int64("chat_id", chatID),
+			slog.Int("messages_removed", removed),
+			slog.Int("tokens_used", tokensForMessages(trimmed)),
+			slog.Int("token_budget", budget),
+		)
+	}
+
+	return trimmed, nil
+}
+
+// tokensForMessages sums estimated tokens for a slice of messages.
+func tokensForMessages(msgs []provider.Message) int {
+	total := 0
+	for _, m := range msgs {
+		total += estimateTokens(m.Content)
+	}
+	return total
 }
 
 // Clear deletes all messages for a chat.

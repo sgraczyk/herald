@@ -19,27 +19,31 @@ import (
 
 // Loop reads messages from the hub, calls the provider, and writes responses back.
 type Loop struct {
-	hub          *hub.Hub
-	provider     provider.LLMProvider
-	extProvider  provider.LLMProvider // provider used for memory extraction
-	store        *store.DB
-	historyLimit int
-	systemPrompt string
-	startTime    time.Time
-	wg           sync.WaitGroup
+	hub                *hub.Hub
+	provider           provider.LLMProvider
+	extProvider        provider.LLMProvider // provider used for memory extraction
+	store              *store.DB
+	historyLimit       int
+	historyTokenBudget int
+	systemPrompt       string
+	startTime          time.Time
+	wg                 sync.WaitGroup
 }
 
 // NewLoop creates a new agent loop. If systemPrompt is empty, the default
-// hardcoded prompt is used.
-func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit int, systemPrompt string) *Loop {
+// hardcoded prompt is used. The tokenBudget parameter controls the maximum
+// estimated tokens for history; a negative value disables token-based trimming
+// (zero is treated as "use default" by config loading).
+func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget int, systemPrompt string) *Loop {
 	return &Loop{
-		hub:          h,
-		provider:     p,
-		extProvider:  pickExtractionProvider(p),
-		store:        s,
-		historyLimit: historyLimit,
-		systemPrompt: systemPrompt,
-		startTime:    time.Now(),
+		hub:                h,
+		provider:           p,
+		extProvider:        pickExtractionProvider(p),
+		store:              s,
+		historyLimit:       historyLimit,
+		historyTokenBudget: tokenBudget,
+		systemPrompt:       systemPrompt,
+		startTime:          time.Now(),
 	}
 }
 
@@ -253,7 +257,7 @@ func (l *Loop) handleMemories(msg hub.InMessage) {
 
 func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	// Load history and memories.
-	history, err := l.store.List(msg.ChatID)
+	history, err := l.store.ListWithTokenBudget(msg.ChatID, l.historyLimit, l.historyTokenBudget)
 	if err != nil {
 		slog.Error("load history failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 	}

@@ -10,14 +10,15 @@ import (
 
 // Config holds all runtime configuration for Herald.
 type Config struct {
-	Telegram       TelegramConfig   `json:"telegram"`
-	Providers      []ProviderConfig `json:"providers"`
-	Store          StoreConfig      `json:"store"`
-	HTTPPort       int              `json:"http_port,omitempty"`
-	HistoryLimit   int              `json:"history_limit"`
-	LogLevel       string           `json:"log_level"`
-	SystemPrompt   string           `json:"system_prompt,omitempty"`
-	AllowedUserIDs []int64          `json:"-"`
+	Telegram           TelegramConfig   `json:"telegram"`
+	Providers          []ProviderConfig `json:"providers"`
+	Store              StoreConfig      `json:"store"`
+	HTTPPort           int              `json:"http_port,omitempty"`
+	HistoryLimit       int              `json:"history_limit"`
+	HistoryTokenBudget int              `json:"history_token_budget,omitempty"`
+	LogLevel           string           `json:"log_level"`
+	SystemPrompt       string           `json:"system_prompt,omitempty"`
+	AllowedUserIDs     []int64          `json:"-"`
 
 	// Raw field for env var resolution.
 	AllowedUserIDsEnv string `json:"allowed_user_ids_env"`
@@ -68,6 +69,10 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 
 	if cfg.HistoryLimit == 0 {
 		cfg.HistoryLimit = 50
+	}
+
+	if cfg.HistoryTokenBudget == 0 {
+		cfg.HistoryTokenBudget = 8000
 	}
 
 	if cfg.Store.Path == "" {
