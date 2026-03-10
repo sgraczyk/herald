@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sgraczyk/herald/internal/hub"
+	"github.com/sgraczyk/herald/internal/metrics"
 	"github.com/sgraczyk/herald/internal/provider"
 	"github.com/sgraczyk/herald/internal/store"
 )
@@ -23,6 +24,7 @@ type Loop struct {
 	provider           provider.LLMProvider
 	extProvider        provider.LLMProvider // provider used for memory extraction
 	store              *store.DB
+	metrics            *metrics.Metrics
 	historyLimit       int
 	historyTokenBudget int
 	systemPrompt       string
@@ -33,13 +35,15 @@ type Loop struct {
 // NewLoop creates a new agent loop. If systemPrompt is empty, the default
 // hardcoded prompt is used. The tokenBudget parameter controls the maximum
 // estimated tokens for history; a negative value disables token-based trimming
-// (zero is treated as "use default" by config loading).
-func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget int, systemPrompt string) *Loop {
+// (zero is treated as "use default" by config loading). If m is nil, no
+// metrics are recorded.
+func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget int, systemPrompt string, m *metrics.Metrics) *Loop {
 	return &Loop{
 		hub:                h,
 		provider:           p,
 		extProvider:        pickExtractionProvider(p),
 		store:              s,
+		metrics:            m,
 		historyLimit:       historyLimit,
 		historyTokenBudget: tokenBudget,
 		systemPrompt:       systemPrompt,
@@ -256,6 +260,10 @@ func (l *Loop) handleMemories(msg hub.InMessage) {
 }
 
 func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
+	if l.metrics != nil {
+		l.metrics.IncReceived()
+	}
+
 	// Load history and memories.
 	history, err := l.store.ListWithTokenBudget(msg.ChatID, l.historyLimit, l.historyTokenBudget)
 	if err != nil {
@@ -283,6 +291,9 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 
 	response, err := l.provider.Chat(ctx, messages)
 	if err != nil {
+		if l.metrics != nil {
+			l.metrics.IncFailed()
+		}
 		slog.Error("provider call failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 		var errText string
 		switch {
@@ -321,6 +332,9 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		slog.Error("save assistant message failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 	}
 
+	if l.metrics != nil {
+		l.metrics.IncSent()
+	}
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: response}
 
 	// Skip extraction for trivial messages.
@@ -372,8 +386,14 @@ func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assi
 
 	resp, err := l.extProvider.Chat(ctx, msgs)
 	if err != nil {
+		if l.metrics != nil {
+			l.metrics.IncExtractionFailure()
+		}
 		slog.Debug("extract memories failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 		return
+	}
+	if l.metrics != nil {
+		l.metrics.IncExtraction()
 	}
 
 	// Parse JSON array from response. The LLM may wrap it in markdown fences.

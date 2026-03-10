@@ -22,7 +22,7 @@ func (s *stubProvider) AuthStatus() string { return s.authStatus }
 
 func TestHandleHealth(t *testing.T) {
 	start := time.Now().Add(-10 * time.Second)
-	srv := NewServer(0, "v0.1.0", start, &stubName{"claude-cli"}, nil, "")
+	srv := NewServer(0, "v0.1.0", start, &stubName{"claude-cli"}, nil, "", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -65,7 +65,7 @@ func TestHandleHealth(t *testing.T) {
 
 func TestHandleHealthWithTokenExpiry(t *testing.T) {
 	start := time.Now().Add(-10 * time.Second)
-	srv := NewServer(0, "v0.1.0", start, &stubName{"claude-cli"}, nil, "2027-03-05")
+	srv := NewServer(0, "v0.1.0", start, &stubName{"claude-cli"}, nil, "2027-03-05", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -85,7 +85,7 @@ func TestHandleHealthWithTokenExpiry(t *testing.T) {
 func TestHandleHealthWithClaudeAuthError(t *testing.T) {
 	start := time.Now().Add(-10 * time.Second)
 	claude := &stubProvider{name: "claude", authStatus: "auth_error"}
-	srv := NewServer(0, "v0.1.0", start, &stubName{"claude"}, claude, "")
+	srv := NewServer(0, "v0.1.0", start, &stubName{"claude"}, claude, "", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -105,7 +105,7 @@ func TestHandleHealthWithClaudeAuthError(t *testing.T) {
 func TestHandleHealthDynamicProviderName(t *testing.T) {
 	start := time.Now().Add(-10 * time.Second)
 	np := &stubName{"provider-a"}
-	srv := NewServer(0, "v0.1.0", start, np, nil, "")
+	srv := NewServer(0, "v0.1.0", start, np, nil, "", nil)
 
 	// First request returns initial name.
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -138,7 +138,7 @@ func TestHandleHealthDynamicProviderName(t *testing.T) {
 func TestHandleHealthWithClaudeOK(t *testing.T) {
 	start := time.Now().Add(-10 * time.Second)
 	claude := &stubProvider{name: "claude", authStatus: "ok"}
-	srv := NewServer(0, "v0.1.0", start, &stubName{"claude"}, claude, "")
+	srv := NewServer(0, "v0.1.0", start, &stubName{"claude"}, claude, "", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
