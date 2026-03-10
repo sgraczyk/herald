@@ -5,27 +5,33 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Fallback tries providers in order and returns the first successful response.
 type Fallback struct {
-	providers []LLMProvider
+	providers  []LLMProvider
+	maxRetries int
 
 	mu     sync.RWMutex
 	active string // name of the currently active provider
 }
 
 // NewFallback creates a fallback chain from the given providers.
-func NewFallback(providers []LLMProvider) *Fallback {
+// maxRetries controls how many times a transient error is retried per provider
+// (0 disables retry).
+func NewFallback(providers []LLMProvider, maxRetries int) *Fallback {
 	name := ""
 	if len(providers) > 0 {
 		name = providers[0].Name()
 	}
 	return &Fallback{
-		providers: providers,
-		active:    name,
+		providers:  providers,
+		maxRetries: maxRetries,
+		active:     name,
 	}
 }
 
@@ -41,6 +47,7 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 	f.mu.RLock()
 	providers := make([]LLMProvider, len(f.providers))
 	copy(providers, f.providers)
+	maxRetries := f.maxRetries
 	f.mu.RUnlock()
 
 	// If any message has images, filter to vision-capable providers only.
@@ -55,13 +62,41 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 	var hasAuthErr, hasTimeout bool
 
 	for _, p := range providers {
-		result, err := p.Chat(ctx, messages)
-		if err == nil {
-			f.mu.Lock()
-			f.active = p.Name()
-			f.mu.Unlock()
+		// Skip retry for claude-cli provider (its errors are opaque).
+		retries := maxRetries
+		if _, ok := p.(*Claude); ok {
+			retries = 0
+		}
 
-			return result, nil
+		var result string
+		var err error
+		for attempt := 0; attempt <= retries; attempt++ {
+			result, err = p.Chat(ctx, messages)
+			if err == nil {
+				f.mu.Lock()
+				f.active = p.Name()
+				f.mu.Unlock()
+
+				return result, nil
+			}
+
+			if attempt < retries && isTransient(err) {
+				delay := time.Second * time.Duration(1<<uint(attempt))
+				slog.Warn("retrying transient error",
+					slog.String("provider", p.Name()),
+					slog.Int("attempt", attempt+1),
+					slog.Duration("backoff", delay),
+					slog.String("error", err.Error()),
+				)
+				select {
+				case <-time.After(delay):
+				case <-ctx.Done():
+					return "", ctx.Err()
+				}
+				continue
+			}
+
+			break
 		}
 
 		if errors.Is(err, ErrAuthFailure) {
@@ -85,6 +120,31 @@ func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error)
 	default:
 		return "", combined
 	}
+}
+
+// isTransient returns true if the error is likely transient and worth retrying.
+// It checks for net.Error (timeouts, connection errors), ErrTimeout, and
+// HTTP 5xx status codes embedded in error messages from the OpenAI provider.
+func isTransient(err error) bool {
+	if errors.Is(err, ErrTimeout) {
+		return true
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+
+	// Check for HTTP 5xx status codes in error messages.
+	// The OpenAI provider formats errors as "API error (status NNN): ..."
+	msg := err.Error()
+	for _, code := range []string{"500", "502", "503", "504"} {
+		if strings.Contains(msg, "status "+code) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // SetActive reorders the provider list so the named provider is tried first.

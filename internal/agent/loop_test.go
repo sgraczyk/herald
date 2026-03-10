@@ -97,7 +97,7 @@ func TestModelCommandNoArg(t *testing.T) {
 	fb := provider.NewFallback([]provider.LLMProvider{
 		&mockProvider{name: "claude-cli"},
 		&mockProvider{name: "chutes"},
-	})
+	}, 0)
 	l, h, _ := testLoop(t, fb)
 	l.provider = fb
 
@@ -116,7 +116,7 @@ func TestModelCommandSwitch(t *testing.T) {
 	fb := provider.NewFallback([]provider.LLMProvider{
 		&mockProvider{name: "claude-cli"},
 		&mockProvider{name: "chutes"},
-	})
+	}, 0)
 	l, h, _ := testLoop(t, fb)
 	l.provider = fb
 
@@ -134,7 +134,7 @@ func TestModelCommandSwitch(t *testing.T) {
 func TestModelCommandInvalid(t *testing.T) {
 	fb := provider.NewFallback([]provider.LLMProvider{
 		&mockProvider{name: "claude-cli"},
-	})
+	}, 0)
 	l, h, _ := testLoop(t, fb)
 	l.provider = fb
 
@@ -434,8 +434,8 @@ func TestPickExtractionProvider(t *testing.T) {
 		wantName string
 	}{
 		{"non-fallback returns same provider", mock, "mock"},
-		{"fallback with openai returns openai", provider.NewFallback([]provider.LLMProvider{mock, oai}), "openai"},
-		{"fallback without openai returns fallback", provider.NewFallback([]provider.LLMProvider{mock}), "mock"},
+		{"fallback with openai returns openai", provider.NewFallback([]provider.LLMProvider{mock, oai}, 0), "openai"},
+		{"fallback without openai returns fallback", provider.NewFallback([]provider.LLMProvider{mock}, 0), "mock"},
 	}
 
 	for _, tt := range tests {

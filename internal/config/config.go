@@ -16,6 +16,7 @@ type Config struct {
 	HTTPPort           int              `json:"http_port,omitempty"`
 	HistoryLimit       int              `json:"history_limit"`
 	HistoryTokenBudget int              `json:"history_token_budget,omitempty"`
+	MaxRetries         int              `json:"max_retries,omitempty"`
 	LogLevel           string           `json:"log_level"`
 	SystemPrompt       string           `json:"system_prompt,omitempty"`
 	AllowedUserIDs     []int64          `json:"-"`
@@ -73,6 +74,10 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 
 	if cfg.HistoryTokenBudget == 0 {
 		cfg.HistoryTokenBudget = 8000
+	}
+
+	if cfg.MaxRetries == 0 {
+		cfg.MaxRetries = 1
 	}
 
 	if cfg.Store.Path == "" {
