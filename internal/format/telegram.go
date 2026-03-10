@@ -14,21 +14,24 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
+// md is a package-level goldmark instance shared across all TelegramHTML calls.
+// This is safe because goldmark.Markdown is stateless and concurrent-safe,
+// and telegramRenderer is an empty struct with no mutable fields.
+var md = goldmark.New(
+	goldmark.WithExtensions(extension.GFM),
+	goldmark.WithRenderer(
+		renderer.NewRenderer(
+			renderer.WithNodeRenderers(
+				util.Prioritized(&telegramRenderer{}, 100),
+			),
+		),
+	),
+)
+
 // TelegramHTML converts standard markdown to Telegram-compatible HTML.
 // Unsupported features (tables, headings) are converted to readable alternatives.
 func TelegramHTML(markdown string) string {
 	source := []byte(markdown)
-
-	md := goldmark.New(
-		goldmark.WithExtensions(extension.GFM),
-		goldmark.WithRenderer(
-			renderer.NewRenderer(
-				renderer.WithNodeRenderers(
-					util.Prioritized(&telegramRenderer{}, 100),
-				),
-			),
-		),
-	)
 
 	var buf bytes.Buffer
 	if err := md.Convert(source, &buf); err != nil {
