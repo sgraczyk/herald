@@ -6,7 +6,7 @@ Part of the [sgraczyk/homelab](https://github.com/sgraczyk/homelab) project. Tra
 
 ## Workflow
 
-All work **must** follow this process. No exceptions. AI agents must enforce this on every task.
+All work **must** follow this process:
 
 ```
 1. Problem Statement     — Understand the problem, gather context
@@ -24,20 +24,6 @@ All work **must** follow this process. No exceptions. AI agents must enforce thi
 
 **Between tasks:** always return to `main`, pull latest, and check `gh issue list` for the next item.
 
-## Task Tracking
-
-All tasks and open work items are tracked as GitHub Issues in this repo. When asked about tasks, remaining work, or what to do next, check `gh issue list`.
-
-## AGENTS.md Maintenance
-
-This file is the source of truth for project conventions. AI agents should periodically validate that it matches reality:
-- Verify repo structure section matches actual files (`find internal/ -name '*.go'`)
-- Verify CI/CD section matches workflow YAML files
-- Verify deployment section matches current infrastructure
-- Flag any drift as a new GitHub Issue
-
-When conventions change (new patterns, new tools, new workflows), update this file as part of the same PR.
-
 ## Architecture
 
 ### Message flow
@@ -50,225 +36,112 @@ Telegram ──write──> Hub.In ──read──> Agent Loop ──call──
                                          └──write──> Hub.Out ──read──> Format (md→HTML) ──send──> Telegram
 ```
 
-The **hub** is the central message router using Go channels. The Telegram adapter writes incoming messages to `Hub.In`, the agent loop reads them, calls the LLM provider, and writes responses to `Hub.Out`, which the Telegram adapter reads and sends back.
-
 ### Provider fallback chain
 
 ```
 1. claude -p (free, uses existing Claude subscription)
-   └─ fail? ──> 2. Chutes.ai (OpenAI-compatible, $3/mo)
+   └─ fail? ──> 2. Chutes.ai (OpenAI-compatible)
                   └─ fail? ──> 3. Return error to user
 ```
 
-The `claude -p` provider executes the Claude CLI in pipe mode with `--output-format json`. The OpenAI-compatible provider is a standard HTTP client that works with any OpenAI-compatible API (Chutes.ai, Groq, Gemini, etc.).
-
 ## Tech Stack
 
-| Package | Purpose | Notes |
-|---------|---------|-------|
-| `github.com/go-telegram/bot` | Telegram Bot API | 0 transitive deps, Bot API 9.4 |
-| `github.com/spf13/cobra` | CLI framework | ~3 transitive deps |
-| `github.com/yuin/goldmark` | Markdown parser | 0 transitive deps, CommonMark-compliant |
-| `go.etcd.io/bbolt` | Embedded key/value store | 0 transitive deps, pure Go |
+| Package | Purpose |
+|---------|---------|
+| `github.com/go-telegram/bot` | Telegram Bot API |
+| `github.com/spf13/cobra` | CLI framework |
+| `github.com/yuin/goldmark` | Markdown parser |
+| `go.etcd.io/bbolt` | Embedded key/value store |
 
-No CGO. Single static binary. Cross-compiles trivially with `GOOS=linux GOARCH=amd64`.
+No CGO. Single static binary.
 
 ## Repo Structure
 
 ```
 cmd/herald/main.go           # Entry point + CLI (cobra)
 internal/
-  hub/
-    hub.go                   # Message hub: fan-in/fan-out via Go channels
   agent/
     loop.go                  # Agent loop: read hub, call LLM, write response
     context.go               # System prompt assembly (personality + memory + history)
+  config/
+    config.go                # Config file loading and validation
   format/
     telegram.go              # Markdown → Telegram HTML converter (goldmark-based)
-  telegram/
-    adapter.go               # go-telegram/bot long-polling, user whitelist
+    split.go                 # Message splitting for Telegram length limits
+  health/
+    handler.go               # HTTP health check endpoint
+  hub/
+    hub.go                   # Message hub: fan-in/fan-out via Go channels
   provider/
-    provider.go              # LLMProvider interface
+    provider.go              # LLMProvider interface + Message type
     claude.go                # claude -p backend (exec, parse JSON output)
     openai.go                # OpenAI-compatible HTTP client (Chutes.ai, Groq, etc.)
     fallback.go              # Try providers in order, return first success
+    image.go                 # Image/photo handling for LLM providers
+    validate.go              # Provider configuration validation
   store/
     db.go                    # bbolt init (go.etcd.io/bbolt, pure Go)
     history.go               # Conversation history per chat (bucket per chat_id)
     memory.go                # Long-term memory per chat (facts, preferences)
+  telegram/
+    adapter.go               # go-telegram/bot long-polling, user whitelist
 docs/
-  configuration.md             # Config file reference, providers, system prompt
-  deployment.md                # User whitelist, systemd, credential management
-  features.md                  # Memory, images, responses, personality, commands
-  logging.md                   # Structured logging reference (slog levels, fields)
-config.json.example
-.env.example
-go.mod
+  ci.md                      # CI workflow details
+  configuration.md           # Config file reference, providers, system prompt
+  deployment.md              # User whitelist, systemd, credential management
+  features.md                # Memory, images, responses, personality, commands
+  formatting.md              # Markdown to Telegram HTML formatting
+  logging.md                 # Structured logging reference (slog levels, fields)
 ```
-
-## Key Interfaces
-
-### LLMProvider
-
-```go
-type LLMProvider interface {
-    Name() string
-    Chat(ctx context.Context, messages []Message) (string, error)
-}
-```
-
-### Message
-
-```go
-type Message struct {
-    Role      string    // "user", "assistant", "system"
-    Content   string
-    Timestamp time.Time
-}
-```
-
-### bbolt Storage Design
-
-```
-herald.db (single file)
-├── messages/              # Top-level bucket
-│   ├── <chat_id>/         # Nested bucket per chat
-│   │   ├── 00000001 → {"role":"user","content":"...","timestamp":"..."}
-│   │   ├── 00000002 → {"role":"assistant","content":"...","timestamp":"..."}
-│   │   └── ...            # Sequential uint64 keys (big-endian, naturally sorted)
-│   └── <chat_id>/         # ... more chats
-├── memories/              # Long-term memory bucket
-│   ├── <chat_id>/         # Nested bucket per chat
-│   │   ├── 00000001 → {"fact":"...","source":"explicit|auto","timestamp":"..."}
-│   │   └── ...            # Sequential uint64 keys
-│   └── <chat_id>/         # ... more chats
-└── metadata/              # Stretch: cron state, settings
-```
-
-- Keys: big-endian uint64 (auto-increment per bucket) — bbolt's `NextSequence()`
-- Values: JSON-encoded (messages: `{role, content, timestamp}`, memories: `{fact, source, timestamp}`)
-- Messages: pruned after insert (oldest deleted if count > 50)
-- Memories: stored without limit; context injection capped at 50 (all explicit + most recent auto)
-- Clear: delete and recreate the chat bucket
-
-## Deployment
-
-| Parameter | Value |
-|-----------|-------|
-| Container | LXC on Proxmox (Debian minimal) |
-| CT ID | `<your-ct-id>` |
-| IP | `<your-host-ip>` |
-| DNS | `<your-internal-dns>` (via reverse proxy) |
-| Resources | 1 CPU, 512 MB RAM, 4 GB disk |
-| Runtime deps | Claude Code CLI (Node.js), herald binary |
-| Service | systemd unit, auto-restart |
-| Credentials | `/etc/herald/.env` (TELEGRAM_TOKEN, CHUTES_API_KEY, ALLOWED_USER_IDS) |
-
-RAM is 512 MB (not 256 MB) because Claude Code CLI requires Node.js runtime. The Go binary itself uses ~10 MB.
 
 ## Conventions
 
 **Language:** English (all code, commits, docs, comments).
 
-**Commits:** [Conventional Commits](https://www.conventionalcommits.org/) format, imperative mood. Use `feat`, `fix`, `chore`, `docs`, `refactor`, `test` with optional scope: `feat(telegram): add long polling`, `fix(provider): handle timeout`, `chore(ci): update workflow`. Breaking changes use `feat!:` or `fix!:` (triggers minor version bump pre-1.0).
+### Design Principles
 
-**Go conventions:**
+- **KISS** — solve the problem at hand, nothing more
+- **Minimalism** — export the minimum API surface
+- **SRP** — one package = one concern, one function = one job
+- **DRY** — extract shared logic, but prefer copying over cross-package abstractions
+- **YAGNI** — don't build for hypothetical requirements; single user, single node
+
+### Commits
+
+[Conventional Commits](https://www.conventionalcommits.org/), imperative mood, with optional scope: `feat(telegram): add long polling`, `fix(provider): handle timeout`.
+
+### Go Code
+
+Follow [Effective Go](https://go.dev/doc/effective_go) and [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) strictly. Project-specific notes:
+
 - `internal/` packages for all non-main code
-- File naming: `snake_case.go`
-- Error wrapping: `fmt.Errorf("operation description: %w", err)`
-- Context propagation: pass `context.Context` as first parameter
 - No global state — inject dependencies via constructors
+- No panics for recoverable errors
+- No CGO — all dependencies must be pure Go
 
-**Config:**
+### Go Comments
+
+Follow [Go Doc Comments](https://go.dev/doc/comment). Every exported symbol must have a doc comment. Don't add comments to code you didn't change.
+
+### Config
+
 - Runtime config via `config.json` (see `config.json.example`)
 - Secrets via environment variables from `.env` (see `.env.example`)
-- Config references env vars by name (e.g., `"token_env": "TELEGRAM_TOKEN"`), code reads them at startup
 
 ## Development
 
-**Build:**
-
 ```bash
-CGO_ENABLED=0 go build -o herald ./cmd/herald
-```
-
-**Test:**
-
-```bash
-go test ./...
-```
-
-**Cross-compile for deployment target:**
-
-```bash
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o herald ./cmd/herald
-```
-
-**Run locally:**
-
-```bash
-./herald          # Start Telegram bot (default)
-./herald ask "question"   # CLI mode for testing
+CGO_ENABLED=0 go build -o herald ./cmd/herald     # Build
+go test ./...                                       # Test
+./herald                                            # Run (Telegram bot)
+./herald ask "question"                             # Run (CLI mode)
 ```
 
 ## CI/CD
 
 Two GitHub Actions workflows in `.github/workflows/`:
 
-**CI** (`ci.yml`) — runs on push/PR to `main`:
-- **lint:** `go vet ./...` + `staticcheck` (via `dominikh/staticcheck-action`)
-- **vulncheck:** `golang/govulncheck-action@v1` (fails on known vulnerabilities in dependencies)
-- **build:** `go build ./cmd/herald` (verifies compilation with `CGO_ENABLED=0`)
-- **test:** `go test -race -coverprofile=coverage.out ./...` (race detector enabled via `CGO_ENABLED=1`)
-  - **Coverage summary:** parses `coverage.out` with `go tool cover -func`, writes total percentage to GitHub Actions step summary, exports `total` and `total_num` outputs
-  - **Badge update (main only):** `schneegans/dynamic-badges-action@v1.7.0` writes coverage percentage to a GitHub Gist; shields.io endpoint badge in README reads it
+- **CI** (`ci.yml`): lint (`go vet` + `staticcheck`), vulncheck (`govulncheck`), build, test (race detector + coverage)
+- **Release Please** (`release-please.yml`): automated version bumps, changelogs, GitHub Releases with binary artifacts
 
-| Name | Kind | Purpose |
-|------|------|---------|
-| `GIST_TOKEN` | Repository secret | PAT with `gist` scope, used by the badge action to write `coverage.json` |
-| `COVERAGE_GIST_ID` | Repository variable | ID of the GitHub Gist storing `coverage.json` |
-
-**Release Please** (`release-please.yml`) — runs on push to `main`:
-- Uses `googleapis/release-please-action@v4` to create/update Release PRs
-- Parses conventional commits to determine version bump and generate CHANGELOG.md
-- On merge of Release PR, creates a GitHub Release with the correct tag
-- **build** job (conditional): builds `linux/amd64` static binary and attaches it to the release
-- Build runs in the same workflow to avoid the `GITHUB_TOKEN` cross-workflow trigger limitation
-
-## Release Process
-
-Releases are automated via [release-please](https://github.com/googleapis/release-please-action):
-
-1. Use conventional commits on `main` (e.g., `feat(agent): add memory`, `fix(store): handle nil bucket`)
-2. Release-please automatically opens/updates a Release PR with version bump and CHANGELOG.md
-3. Review and merge the Release PR when ready to release
-4. GitHub Release is created automatically, triggering the binary build
-5. Deploy manually: download binary from the release, copy to LXC, restart service
-
-```bash
-# Example deploy
-scp herald-linux-amd64 root@<your-host-ip>:/usr/local/bin/herald
-ssh root@<your-host-ip> systemctl restart herald
-```
-
-Versioning: [semver](https://semver.org/). Managed by release-please based on conventional commits. Config in `release-please-config.json` and `.release-please-manifest.json`.
-
-## MVP Scope (v0.1.0)
-
-1. Telegram bot responding to messages via `claude -p`
-2. Fallback to Chutes.ai when Claude CLI fails or is slow
-3. Conversation history in bbolt (50 messages/chat, structured)
-4. `/clear` command to reset context
-5. `/model` command to switch between providers
-6. `/status` command showing uptime, provider, message count
-7. User ID whitelist (only respond to authorized Telegram users)
-8. CLI mode for local testing (`./herald ask "question"`)
-9. Systemd service with auto-restart
-
-## Rules
-
-- **No secrets in repo.** Use environment variables via `.env` files (gitignored).
-- **No CGO.** All dependencies must be pure Go. Use `CGO_ENABLED=0` for builds.
-- **Single binary.** No sidecar processes, no Docker, no orchestration.
-- **Config via files + env.** `config.json` for structure, `.env` for secrets.
-- **Don't over-engineer.** Single user, single node. Keep it simple.
+Versioning: [semver](https://semver.org/) via release-please. Config in `release-please-config.json`.
