@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0](https://github.com/sgraczyk/herald/compare/v0.4.0...v0.5.0) (2026-03-10)
+
+
+### Features
+
+* **agent:** drain buffered messages on shutdown ([#132](https://github.com/sgraczyk/herald/issues/132)) ([ca870de](https://github.com/sgraczyk/herald/commit/ca870de179936725d157f2e5d487f41e1fa43942))
+* **metrics:** add in-memory counters and JSON endpoint ([#137](https://github.com/sgraczyk/herald/issues/137)) ([a47f272](https://github.com/sgraczyk/herald/commit/a47f27240feb9211ee1ca3d9723d3b3bc31c5090))
+* **provider:** add retry with backoff for transient errors ([#136](https://github.com/sgraczyk/herald/issues/136)) ([a7d2181](https://github.com/sgraczyk/herald/commit/a7d218169d38497dff0afc91dfa142a662b58065))
+* **store:** add token-based history trimming ([#134](https://github.com/sgraczyk/herald/issues/134)) ([5f47ff6](https://github.com/sgraczyk/herald/commit/5f47ff66799ac84a8139fea1957d5d42cf5684fe))
+
+
+### Bug Fixes
+
+* **ci:** use dedicated PAT for release-please ([#138](https://github.com/sgraczyk/herald/issues/138)) ([001b832](https://github.com/sgraczyk/herald/commit/001b832862deca77271dd1f7490b025139fb1847))
+
 ## [0.4.0](https://github.com/sgraczyk/herald/compare/v0.3.1...v0.4.0) (2026-03-10)
 
 
