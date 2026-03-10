@@ -66,15 +66,46 @@ func (l *Loop) StartTime() time.Time { return l.startTime }
 func (l *Loop) Wait() { l.wg.Wait() }
 
 // Run starts the agent loop. It blocks until ctx is cancelled.
-// On shutdown, it waits up to 10 seconds for in-flight memory extractions.
+// On shutdown, it drains remaining messages from the hub with a 30-second
+// grace period, then waits up to 10 seconds for in-flight memory extractions.
 func (l *Loop) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			l.drainMessages()
 			l.drainExtractions()
 			return
 		case msg := <-l.hub.In:
 			l.handle(ctx, msg)
+		}
+	}
+}
+
+// drainMessages stops the hub from accepting new messages and processes
+// any messages remaining in hub.In with a 30-second grace period.
+func (l *Loop) drainMessages() {
+	l.hub.StartDrain()
+
+	pending := len(l.hub.In)
+	slog.Info("draining", "pending", pending)
+
+	if pending == 0 {
+		return
+	}
+
+	drainCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	for {
+		select {
+		case <-drainCtx.Done():
+			slog.Warn("drain grace period expired", "remaining", len(l.hub.In))
+			return
+		case msg := <-l.hub.In:
+			l.handle(drainCtx, msg)
+			if len(l.hub.In) == 0 {
+				return
+			}
 		}
 	}
 }

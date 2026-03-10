@@ -111,6 +111,11 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 
+	if a.hub.Draining() {
+		slog.Debug("dropping message, hub is draining", slog.Int64("chat_id", chatID))
+		return
+	}
+
 	in := parseMessage(chatID, userID, text)
 	a.hub.In <- in
 }
@@ -163,6 +168,11 @@ func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Messa
 	text := strings.TrimSpace(msg.Caption)
 	if text == "" {
 		text = "What's in this image?"
+	}
+
+	if a.hub.Draining() {
+		slog.Debug("dropping photo message, hub is draining", slog.Int64("chat_id", chatID))
+		return
 	}
 
 	a.hub.In <- hub.InMessage{
