@@ -31,7 +31,7 @@ Explicit memories (from `/remember`) are always prioritized in conversations.
 
 ### Implementation Notes
 
-Extraction runs in a background goroutine with a 30-second timeout. On shutdown, in-flight extractions get up to 10 seconds to complete. The extraction provider prefers OpenAI-compatible over Claude CLI to avoid spawning concurrent Node.js processes on the constrained deployment target.
+Extraction runs in a background goroutine with a 30-second timeout. On shutdown, buffered messages get up to 30 seconds to be processed; in-flight extractions get an additional 10 seconds to complete. The extraction provider prefers OpenAI-compatible over Claude CLI to avoid spawning concurrent Node.js processes on the constrained deployment target.
 
 ## Image Understanding
 
