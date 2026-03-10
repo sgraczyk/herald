@@ -1,3 +1,5 @@
+// Package agent implements the core agent loop that processes messages and
+// calls LLM providers.
 package agent
 
 import (

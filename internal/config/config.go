@@ -1,3 +1,4 @@
+// Package config handles loading and validating the Herald configuration file.
 package config
 
 import (
@@ -7,6 +8,7 @@ import (
 	"strings"
 )
 
+// Config holds all runtime configuration for Herald.
 type Config struct {
 	Telegram       TelegramConfig   `json:"telegram"`
 	Providers      []ProviderConfig `json:"providers"`
@@ -21,11 +23,13 @@ type Config struct {
 	AllowedUserIDsEnv string `json:"allowed_user_ids_env"`
 }
 
+// TelegramConfig holds Telegram Bot API connection settings.
 type TelegramConfig struct {
 	TokenEnv string `json:"token_env"`
 	Token    string `json:"-"`
 }
 
+// ProviderConfig describes an LLM provider entry in the configuration file.
 type ProviderConfig struct {
 	Name      string `json:"name"`
 	Type      string `json:"type"` // "claude-cli" or "openai"
@@ -35,6 +39,7 @@ type ProviderConfig struct {
 	APIKey    string `json:"-"`
 }
 
+// StoreConfig holds the bbolt database path.
 type StoreConfig struct {
 	Path string `json:"path"`
 }

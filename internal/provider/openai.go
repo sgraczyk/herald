@@ -40,8 +40,10 @@ func NewOpenAI(name, baseURL, model, apiKey string) *OpenAI {
 	}
 }
 
+// Name returns the configured provider name.
 func (o *OpenAI) Name() string { return o.name }
 
+// Chat sends a conversation to the OpenAI-compatible endpoint and returns the response.
 func (o *OpenAI) Chat(ctx context.Context, messages []Message) (string, error) {
 	reqBody := openaiRequest{
 		Model:    o.model,

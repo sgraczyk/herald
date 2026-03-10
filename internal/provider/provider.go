@@ -1,3 +1,4 @@
+// Package provider implements LLM backends and the fallback chain.
 package provider
 
 import (
@@ -30,6 +31,8 @@ type Message struct {
 
 // LLMProvider is the interface that all LLM backends must implement.
 type LLMProvider interface {
+	// Name returns the display name of the provider.
 	Name() string
+	// Chat sends a conversation to the LLM and returns the assistant's reply.
 	Chat(ctx context.Context, messages []Message) (string, error)
 }

@@ -29,12 +29,14 @@ func NewFallback(providers []LLMProvider) *Fallback {
 	}
 }
 
+// Name returns the name of the last successful provider.
 func (f *Fallback) Name() string {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.active
 }
 
+// Chat tries each provider in order and returns the first successful response.
 func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error) {
 	f.mu.RLock()
 	providers := make([]LLMProvider, len(f.providers))

@@ -1,3 +1,5 @@
+// Package store provides persistent storage for conversation history and
+// user memories using bbolt.
 package store
 
 import (

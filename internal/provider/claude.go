@@ -31,6 +31,7 @@ func NewClaude() *Claude {
 	}
 }
 
+// Name returns the provider name "claude".
 func (c *Claude) Name() string { return "claude" }
 
 // AuthStatus returns the last known auth status: "ok", "auth_error", or "" (unknown).
@@ -46,6 +47,7 @@ func (c *Claude) setAuthStatus(status string) {
 	c.mu.Unlock()
 }
 
+// Chat sends a conversation to the Claude CLI in pipe mode and returns the response.
 func (c *Claude) Chat(ctx context.Context, messages []Message) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
