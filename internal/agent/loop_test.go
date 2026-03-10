@@ -35,7 +35,7 @@ func testLoop(t *testing.T, p provider.LLMProvider) (*Loop, *hub.Hub, *store.DB)
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	l := NewLoop(h, p, db, 50, "")
+	l := NewLoop(h, p, db, 50, 8000, "")
 	return l, h, db
 }
 

@@ -14,7 +14,8 @@ type Config struct {
 	Providers      []ProviderConfig `json:"providers"`
 	Store          StoreConfig      `json:"store"`
 	HTTPPort       int              `json:"http_port,omitempty"`
-	HistoryLimit   int              `json:"history_limit"`
+	HistoryLimit       int              `json:"history_limit"`
+	HistoryTokenBudget int              `json:"history_token_budget,omitempty"`
 	LogLevel       string           `json:"log_level"`
 	SystemPrompt   string           `json:"system_prompt,omitempty"`
 	AllowedUserIDs []int64          `json:"-"`
@@ -68,6 +69,10 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 
 	if cfg.HistoryLimit == 0 {
 		cfg.HistoryLimit = 50
+	}
+
+	if cfg.HistoryTokenBudget == 0 {
+		cfg.HistoryTokenBudget = 8000
 	}
 
 	if cfg.Store.Path == "" {
