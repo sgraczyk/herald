@@ -35,7 +35,7 @@ func testLoop(t *testing.T, p provider.LLMProvider) (*Loop, *hub.Hub, *store.DB)
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	l := NewLoop(h, p, db, 50, 8000, "", nil)
+	l := NewLoop(h, p, db, 50, 8000, false, "", nil)
 	return l, h, db
 }
 
@@ -337,7 +337,7 @@ func TestBuildMessagesWithMemories(t *testing.T) {
 		{Fact: "prefers Go", Source: "explicit"},
 	}
 
-	msgs := buildMessages(history, memories, "hello", "")
+	msgs := buildMessages(history, memories, "hello", "", "")
 
 	if len(msgs) != 3 {
 		t.Fatalf("expected 3 messages, got %d", len(msgs))
@@ -403,7 +403,7 @@ func TestSelectMemoriesUnderLimit(t *testing.T) {
 
 func TestBuildMessagesWithCustomPrompt(t *testing.T) {
 	custom := "You are a pirate assistant."
-	msgs := buildMessages(nil, nil, "hello", custom)
+	msgs := buildMessages(nil, nil, "hello", custom, "")
 
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(msgs))
@@ -414,7 +414,7 @@ func TestBuildMessagesWithCustomPrompt(t *testing.T) {
 }
 
 func TestBuildMessagesWithoutMemories(t *testing.T) {
-	msgs := buildMessages(nil, nil, "hello", "")
+	msgs := buildMessages(nil, nil, "hello", "", "")
 
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(msgs))
@@ -680,4 +680,143 @@ func TestUnknownCommandPassesToLLM(t *testing.T) {
 	if out.Text != "I don't know that command." {
 		t.Errorf("expected LLM response, got %q", out.Text)
 	}
+}
+
+func TestSummarizationBeforePrune(t *testing.T) {
+	callCount := 0
+	h := hub.New()
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	// Create loop with summarize=true and limit=4.
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, true, "", nil)
+
+	// Fill history to limit: 4 messages.
+	for i := 0; i < 4; i++ {
+		_ = db.Append(1, provider.Message{Role: "user", Content: fmt.Sprintf("msg-%d", i)}, 50)
+	}
+
+	// Provider: 1st call = chat response, 2nd call = summary, 3rd call = extraction.
+	sp := &sequentialProvider{
+		responses: []string{"chat reply", "Summary of old messages.", "[]"},
+		callCount: &callCount,
+	}
+	l.provider = sp
+	l.extProvider = sp
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "new message here"})
+	readOut(t, h)
+	l.Wait()
+
+	summary, err := db.GetSummary(1)
+	if err != nil {
+		t.Fatalf("get summary: %v", err)
+	}
+	if summary != "Summary of old messages." {
+		t.Errorf("expected summary to be saved, got %q", summary)
+	}
+}
+
+func TestSummarizationFailureDoesNotBreakFlow(t *testing.T) {
+	callCount := 0
+	h := hub.New()
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, true, "", nil)
+
+	// Fill history to limit.
+	for i := 0; i < 4; i++ {
+		_ = db.Append(1, provider.Message{Role: "user", Content: fmt.Sprintf("msg-%d", i)}, 50)
+	}
+
+	// Provider: 1st = chat response, 2nd = summarization error, 3rd = extraction.
+	sp := &errorOnNthProvider{
+		responses: []string{"chat reply", "", "[]"},
+		errorOn:   1,
+		err:       fmt.Errorf("summarization failed"),
+		callCount: &callCount,
+	}
+	l.provider = sp
+	l.extProvider = sp
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "new message here"})
+	out := readOut(t, h)
+	l.Wait()
+
+	if out.Text != "chat reply" {
+		t.Errorf("expected chat reply despite summarization failure, got %q", out.Text)
+	}
+}
+
+func TestSummaryInContext(t *testing.T) {
+	cap := &capturingProvider{responses: []string{"response", "[]"}}
+	h := hub.New()
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	l := NewLoop(h, cap, db, 50, 8000, true, "", nil)
+	l.extProvider = cap
+
+	// Store a summary.
+	_ = db.SaveSummary(1, "User prefers concise answers.")
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hello world message"})
+	readOut(t, h)
+	l.Wait()
+
+	if len(cap.captured) == 0 {
+		t.Fatal("provider was never called")
+	}
+	systemPrompt := cap.captured[0][0].Content
+	if !strings.Contains(systemPrompt, "Summary of earlier conversation:") {
+		t.Errorf("expected summary in system prompt, got %q", systemPrompt)
+	}
+	if !strings.Contains(systemPrompt, "User prefers concise answers.") {
+		t.Errorf("expected summary text in system prompt, got %q", systemPrompt)
+	}
+}
+
+func TestBuildMessagesWithSummary(t *testing.T) {
+	msgs := buildMessages(nil, nil, "hello", "", "User likes Go.")
+
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if !strings.Contains(msgs[0].Content, "Summary of earlier conversation:") {
+		t.Errorf("expected summary section in system prompt, got %q", msgs[0].Content)
+	}
+	if !strings.Contains(msgs[0].Content, "User likes Go.") {
+		t.Errorf("expected summary text in system prompt, got %q", msgs[0].Content)
+	}
+}
+
+// errorOnNthProvider returns an error on a specific call index.
+type errorOnNthProvider struct {
+	responses []string
+	errorOn   int
+	err       error
+	callCount *int
+}
+
+func (e *errorOnNthProvider) Name() string { return "test" }
+func (e *errorOnNthProvider) Chat(_ context.Context, _ []provider.Message) (string, error) {
+	idx := *e.callCount
+	*e.callCount++
+	if idx == e.errorOn {
+		return "", e.err
+	}
+	if idx < len(e.responses) {
+		return e.responses[idx], nil
+	}
+	return "[]", nil
 }
