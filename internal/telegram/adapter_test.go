@@ -156,6 +156,7 @@ func testAdapter(t *testing.T, allowedIDs map[int64]bool) (*Adapter, *hub.Hub) {
 		hub:        h,
 		allowedIDs: allowedIDs,
 		typing:     make(map[int64]context.CancelFunc),
+		streamMsgs: make(map[int64]int),
 	}, h
 }
 

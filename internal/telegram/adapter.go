@@ -36,8 +36,9 @@ type Adapter struct {
 	hub        *hub.Hub
 	allowedIDs map[int64]bool
 
-	mu      sync.Mutex
-	typing  map[int64]context.CancelFunc // active typing indicators per chat
+	mu         sync.Mutex
+	typing     map[int64]context.CancelFunc // active typing indicators per chat
+	streamMsgs map[int64]int                // chatID -> Telegram message ID for in-progress stream
 }
 
 // New creates a new Telegram adapter.
@@ -47,6 +48,7 @@ func New(token string, h *hub.Hub, allowedUserIDs []int64) (*Adapter, error) {
 		hub:        h,
 		allowedIDs: make(map[int64]bool, len(allowedUserIDs)),
 		typing:     make(map[int64]context.CancelFunc),
+		streamMsgs: make(map[int64]int),
 	}
 
 	for _, id := range allowedUserIDs {
@@ -75,6 +77,7 @@ func New(token string, h *hub.Hub, allowedUserIDs []int64) (*Adapter, error) {
 func (a *Adapter) Start(ctx context.Context) {
 	go a.dispatchOut(ctx)
 	go a.dispatchTyping(ctx)
+	go a.dispatchStream(ctx)
 
 	// Start long polling (blocks).
 	a.bot.Start(ctx)
@@ -258,6 +261,111 @@ func (a *Adapter) dispatchTyping(ctx context.Context) {
 			return
 		case chatID := <-a.hub.Typing:
 			a.startTyping(ctx, chatID)
+		}
+	}
+}
+
+func (a *Adapter) dispatchStream(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case update := <-a.hub.Stream:
+			a.stopTyping(update.ChatID)
+
+			a.mu.Lock()
+			msgID, exists := a.streamMsgs[update.ChatID]
+			a.mu.Unlock()
+
+			// Error case: empty text + done means delete in-progress message.
+			if update.Text == "" && update.Done {
+				if exists {
+					_, err := a.bot.DeleteMessage(ctx, &bot.DeleteMessageParams{
+						ChatID:    update.ChatID,
+						MessageID: msgID,
+					})
+					if err != nil {
+						slog.Warn("delete stream message failed", slog.Int64("chat_id", update.ChatID), slog.String("error", err.Error()))
+					}
+					a.mu.Lock()
+					delete(a.streamMsgs, update.ChatID)
+					a.mu.Unlock()
+				}
+				continue
+			}
+
+			if !exists {
+				// First update: send a new message (plain text, no ParseMode).
+				sent, err := a.bot.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID: update.ChatID,
+					Text:   update.Text,
+				})
+				if err != nil {
+					slog.Warn("send stream message failed", slog.Int64("chat_id", update.ChatID), slog.String("error", err.Error()))
+					continue
+				}
+				a.mu.Lock()
+				a.streamMsgs[update.ChatID] = sent.ID
+				a.mu.Unlock()
+				msgID = sent.ID
+			} else if !update.Done {
+				// Mid-stream edit: plain text, no ParseMode.
+				_, err := a.bot.EditMessageText(ctx, &bot.EditMessageTextParams{
+					ChatID:    update.ChatID,
+					MessageID: msgID,
+					Text:      update.Text,
+				})
+				if err != nil {
+					slog.Debug("edit stream message failed", slog.Int64("chat_id", update.ChatID), slog.String("error", err.Error()))
+				}
+			}
+
+			if update.Done {
+				// Final edit: format with HTML.
+				formatted := format.TelegramHTML(update.Text)
+				chunks := format.Split(formatted, 4096)
+
+				if len(chunks) == 1 {
+					_, err := a.bot.EditMessageText(ctx, &bot.EditMessageTextParams{
+						ChatID:    update.ChatID,
+						MessageID: msgID,
+						Text:      chunks[0],
+						ParseMode: models.ParseModeHTML,
+					})
+					if err != nil {
+						slog.Warn("edit stream HTML failed, retrying plain text", slog.Int64("chat_id", update.ChatID), slog.String("error", err.Error()))
+						a.bot.EditMessageText(ctx, &bot.EditMessageTextParams{
+							ChatID:    update.ChatID,
+							MessageID: msgID,
+							Text:      update.Text,
+						})
+					}
+				} else {
+					// Multiple chunks: delete stream message and send fresh ones.
+					a.bot.DeleteMessage(ctx, &bot.DeleteMessageParams{
+						ChatID:    update.ChatID,
+						MessageID: msgID,
+					})
+					for _, chunk := range chunks {
+						_, err := a.bot.SendMessage(ctx, &bot.SendMessageParams{
+							ChatID:    update.ChatID,
+							Text:      chunk,
+							ParseMode: models.ParseModeHTML,
+						})
+						if err != nil {
+							slog.Warn("send stream chunk HTML failed, retrying plain text", slog.Int64("chat_id", update.ChatID), slog.String("error", err.Error()))
+							a.bot.SendMessage(ctx, &bot.SendMessageParams{
+								ChatID: update.ChatID,
+								Text:   chunk,
+							})
+						}
+					}
+				}
+
+				a.mu.Lock()
+				delete(a.streamMsgs, update.ChatID)
+				a.mu.Unlock()
+			}
 		}
 	}
 }

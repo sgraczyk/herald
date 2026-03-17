@@ -25,11 +25,19 @@ type OutMessage struct {
 	Text   string
 }
 
+// StreamUpdate represents a partial response update for in-place editing.
+type StreamUpdate struct {
+	ChatID int64
+	Text   string // accumulated text so far (not just the delta)
+	Done   bool   // final update — apply formatting, clean up state
+}
+
 // Hub routes messages between the Telegram adapter and the agent loop.
 type Hub struct {
 	In     chan InMessage
 	Out    chan OutMessage
-	Typing chan int64 // ChatID to send typing indicator for
+	Typing chan int64        // ChatID to send typing indicator for
+	Stream chan StreamUpdate // streaming response updates
 
 	draining atomic.Bool
 }
@@ -40,6 +48,7 @@ func New() *Hub {
 		In:     make(chan InMessage, 64),
 		Out:    make(chan OutMessage, 64),
 		Typing: make(chan int64, 64),
+		Stream: make(chan StreamUpdate, 64),
 	}
 }
 

@@ -46,6 +46,16 @@ func (f *Fallback) Name() string {
 	return f.active
 }
 
+// Active returns the first provider in the chain (the active/preferred one).
+func (f *Fallback) Active() LLMProvider {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if len(f.providers) == 0 {
+		return nil
+	}
+	return f.providers[0]
+}
+
 // Chat tries each provider in order and returns the first successful response.
 func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error) {
 	f.mu.RLock()

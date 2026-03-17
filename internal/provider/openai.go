@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -22,21 +24,23 @@ const openAITimeout = 60 * time.Second
 // Works with any API that implements the OpenAI chat completions endpoint
 // (Chutes.ai, Groq, Gemini, DeepSeek, etc.).
 type OpenAI struct {
-	name    string
-	baseURL string
-	model   string
-	apiKey  string
-	client  *http.Client
+	name         string
+	baseURL      string
+	model        string
+	apiKey       string
+	client       *http.Client
+	streamClient *http.Client // no timeout — streaming lifecycle controlled by ctx
 }
 
 // NewOpenAI creates a new OpenAI-compatible provider.
 func NewOpenAI(name, baseURL, model, apiKey string) *OpenAI {
 	return &OpenAI{
-		name:    name,
-		baseURL: baseURL,
-		model:   model,
-		apiKey:  apiKey,
-		client:  &http.Client{Timeout: openAITimeout},
+		name:         name,
+		baseURL:      baseURL,
+		model:        model,
+		apiKey:       apiKey,
+		client:       &http.Client{Timeout: openAITimeout},
+		streamClient: &http.Client{},
 	}
 }
 
@@ -107,6 +111,105 @@ func (o *OpenAI) Chat(ctx context.Context, messages []Message) (string, error) {
 		return "", fmt.Errorf("unexpected content type in response from %s", o.name)
 	}
 	return content, nil
+}
+
+// ChatStream sends a conversation to the OpenAI-compatible endpoint in streaming
+// mode and calls fn with text deltas as they arrive.
+func (o *OpenAI) ChatStream(ctx context.Context, messages []Message, fn func(delta string)) (string, error) {
+	reqBody := openaiStreamRequest{
+		Model:    o.model,
+		Messages: make([]openaiMessage, len(messages)),
+		Stream:   true,
+	}
+	for i, m := range messages {
+		reqBody.Messages[i] = openaiMessage{
+			Role:    m.Role,
+			Content: buildOpenAIContent(m),
+		}
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("marshal request: %w", err)
+	}
+
+	url := o.baseURL + "/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+o.apiKey)
+
+	resp, err := o.streamClient.Do(req)
+	if err != nil {
+		if isTimeoutError(ctx, err) {
+			return "", fmt.Errorf("send request: %w: %w", ErrTimeout, err)
+		}
+		return "", fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return "", fmt.Errorf("API error (status %d): %s: %w", resp.StatusCode, respBody, ErrAuthFailure)
+		}
+		return "", &HTTPStatusError{Code: resp.StatusCode, Body: string(respBody)}
+	}
+
+	var full strings.Builder
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk openaiStreamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+		if len(chunk.Choices) > 0 {
+			delta := chunk.Choices[0].Delta.Content
+			if delta != "" {
+				fn(delta)
+				full.WriteString(delta)
+			}
+		}
+	}
+
+	result := full.String()
+	if result == "" {
+		return "", fmt.Errorf("empty response from %s stream", o.name)
+	}
+	return result, nil
+}
+
+type openaiStreamRequest struct {
+	Model    string          `json:"model"`
+	Messages []openaiMessage `json:"messages"`
+	Stream   bool            `json:"stream"`
+}
+
+type openaiStreamChunk struct {
+	Choices []openaiStreamChoice `json:"choices"`
+}
+
+type openaiStreamChoice struct {
+	Delta struct {
+		Content string `json:"content"`
+	} `json:"delta"`
 }
 
 type openaiRequest struct {
