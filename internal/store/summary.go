@@ -10,6 +10,14 @@ func (d *DB) SaveSummary(chatID int64, text string) error {
 	})
 }
 
+// ClearSummary deletes the conversation summary for a chat.
+func (d *DB) ClearSummary(chatID int64) error {
+	return d.bolt.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(summariesBucket)
+		return b.Delete(chatBucketKey(chatID))
+	})
+}
+
 // GetSummary returns the conversation summary for a chat, or empty string if none.
 func (d *DB) GetSummary(chatID int64) (string, error) {
 	var summary string

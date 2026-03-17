@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -54,8 +55,9 @@ func TestClearCommand(t *testing.T) {
 	mock := &mockProvider{name: "test"}
 	l, h, db := testLoop(t, mock)
 
-	// Add a message to history first.
+	// Add a message and a summary.
 	_ = db.Append(1, provider.Message{Role: "user", Content: "hello"}, 50)
+	_ = db.SaveSummary(1, "some old summary")
 
 	l.handle(context.Background(), hub.InMessage{ChatID: 1, Command: "/clear"})
 
@@ -67,6 +69,11 @@ func TestClearCommand(t *testing.T) {
 	count, _ := db.Count(1)
 	if count != 0 {
 		t.Errorf("expected 0 messages after clear, got %d", count)
+	}
+
+	summary, _ := db.GetSummary(1)
+	if summary != "" {
+		t.Errorf("expected empty summary after clear, got %q", summary)
 	}
 }
 
@@ -276,12 +283,10 @@ func TestMemoriesCommandEmpty(t *testing.T) {
 }
 
 func TestAutoExtraction(t *testing.T) {
-	callCount := 0
 	l, h, db := testLoop(t, &mockProvider{name: "test"})
 
 	sp := provider.LLMProvider(&sequentialProvider{
 		responses: []string{"Sure, I can help!", `["prefers Go", "works at Acme"]`},
-		callCount: &callCount,
 	})
 	l.provider = sp
 	l.extProvider = sp
@@ -306,7 +311,6 @@ func TestAutoExtraction(t *testing.T) {
 }
 
 func TestAutoExtractionDedup(t *testing.T) {
-	callCount := 0
 	l, h, db := testLoop(t, &mockProvider{name: "test"})
 
 	// Pre-store a memory.
@@ -314,7 +318,6 @@ func TestAutoExtractionDedup(t *testing.T) {
 
 	sp := provider.LLMProvider(&sequentialProvider{
 		responses: []string{"OK!", `["prefers Go"]`},
-		callCount: &callCount,
 	})
 	l.provider = sp
 	l.extProvider = sp
@@ -449,13 +452,11 @@ func TestPickExtractionProvider(t *testing.T) {
 }
 
 func TestAsyncExtractionDoesNotBlockResponse(t *testing.T) {
-	callCount := 0
 	l, h, _ := testLoop(t, &mockProvider{name: "test"})
 
 	// Use a slow provider for extraction: chat responds instantly, extraction takes 200ms.
 	sp := provider.LLMProvider(&sequentialProvider{
 		responses: []string{"fast reply", `[]`},
-		callCount: &callCount,
 		delay:     []time.Duration{0, 200 * time.Millisecond},
 	})
 	l.provider = sp
@@ -478,13 +479,11 @@ func TestAsyncExtractionDoesNotBlockResponse(t *testing.T) {
 }
 
 func TestTrivialMessageSkipsExtraction(t *testing.T) {
-	callCount := 0
 	l, h, _ := testLoop(t, &mockProvider{name: "test"})
 
-	sp := provider.LLMProvider(&sequentialProvider{
+	sp := &sequentialProvider{
 		responses: []string{"ok"},
-		callCount: &callCount,
-	})
+	}
 	l.provider = sp
 	l.extProvider = sp
 
@@ -492,22 +491,22 @@ func TestTrivialMessageSkipsExtraction(t *testing.T) {
 	readOut(t, h)
 	l.Wait()
 
-	if callCount != 1 {
-		t.Errorf("expected 1 provider call (no extraction for trivial message), got %d", callCount)
+	if got := int(sp.callCount.Load()); got != 1 {
+		t.Errorf("expected 1 provider call (no extraction for trivial message), got %d", got)
 	}
 }
 
 // sequentialProvider returns different responses for each call.
+// The counter is atomic to support concurrent goroutines.
 type sequentialProvider struct {
 	responses []string
-	callCount *int
+	callCount atomic.Int64
 	delay     []time.Duration // optional per-call delay
 }
 
 func (s *sequentialProvider) Name() string { return "test" }
 func (s *sequentialProvider) Chat(_ context.Context, _ []provider.Message) (string, error) {
-	idx := *s.callCount
-	*s.callCount++
+	idx := int(s.callCount.Add(1) - 1)
 	if idx < len(s.delay) && s.delay[idx] > 0 {
 		time.Sleep(s.delay[idx])
 	}
@@ -683,7 +682,6 @@ func TestUnknownCommandPassesToLLM(t *testing.T) {
 }
 
 func TestSummarizationBeforePrune(t *testing.T) {
-	callCount := 0
 	h := hub.New()
 	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -699,15 +697,15 @@ func TestSummarizationBeforePrune(t *testing.T) {
 		_ = db.Append(1, provider.Message{Role: "user", Content: fmt.Sprintf("msg-%d", i)}, 50)
 	}
 
-	// Provider: 1st call = chat response, 2nd call = summary, 3rd call = extraction.
+	// Provider: 1st call = chat response, 2nd call = summary.
+	// Use a trivial message to skip extraction and avoid racing goroutines.
 	sp := &sequentialProvider{
-		responses: []string{"chat reply", "Summary of old messages.", "[]"},
-		callCount: &callCount,
+		responses: []string{"chat reply", "Summary of old messages."},
 	}
 	l.provider = sp
 	l.extProvider = sp
 
-	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "new message here"})
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hi"})
 	readOut(t, h)
 	l.Wait()
 
@@ -721,7 +719,6 @@ func TestSummarizationBeforePrune(t *testing.T) {
 }
 
 func TestSummarizationFailureDoesNotBreakFlow(t *testing.T) {
-	callCount := 0
 	h := hub.New()
 	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -736,17 +733,17 @@ func TestSummarizationFailureDoesNotBreakFlow(t *testing.T) {
 		_ = db.Append(1, provider.Message{Role: "user", Content: fmt.Sprintf("msg-%d", i)}, 50)
 	}
 
-	// Provider: 1st = chat response, 2nd = summarization error, 3rd = extraction.
+	// Provider: 1st = chat response, 2nd = summarization error.
+	// Use a trivial message to skip extraction and avoid racing goroutines.
 	sp := &errorOnNthProvider{
-		responses: []string{"chat reply", "", "[]"},
+		responses: []string{"chat reply", ""},
 		errorOn:   1,
 		err:       fmt.Errorf("summarization failed"),
-		callCount: &callCount,
 	}
 	l.provider = sp
 	l.extProvider = sp
 
-	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "new message here"})
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hi"})
 	out := readOut(t, h)
 	l.Wait()
 
@@ -801,17 +798,17 @@ func TestBuildMessagesWithSummary(t *testing.T) {
 }
 
 // errorOnNthProvider returns an error on a specific call index.
+// The counter is atomic to support concurrent goroutines.
 type errorOnNthProvider struct {
 	responses []string
 	errorOn   int
 	err       error
-	callCount *int
+	callCount atomic.Int64
 }
 
 func (e *errorOnNthProvider) Name() string { return "test" }
 func (e *errorOnNthProvider) Chat(_ context.Context, _ []provider.Message) (string, error) {
-	idx := *e.callCount
-	*e.callCount++
+	idx := int(e.callCount.Add(1) - 1)
 	if idx == e.errorOn {
 		return "", e.err
 	}

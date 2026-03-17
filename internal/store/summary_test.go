@@ -30,6 +30,33 @@ func TestGetSummaryNonexistent(t *testing.T) {
 	}
 }
 
+func TestClearSummary(t *testing.T) {
+	db := testDB(t)
+
+	if err := db.SaveSummary(1, "some summary"); err != nil {
+		t.Fatalf("save summary: %v", err)
+	}
+	if err := db.ClearSummary(1); err != nil {
+		t.Fatalf("clear summary: %v", err)
+	}
+
+	got, err := db.GetSummary(1)
+	if err != nil {
+		t.Fatalf("get summary: %v", err)
+	}
+	if got != "" {
+		t.Errorf("expected empty string after clear, got %q", got)
+	}
+}
+
+func TestClearSummaryNonexistent(t *testing.T) {
+	db := testDB(t)
+
+	if err := db.ClearSummary(999); err != nil {
+		t.Fatalf("clear nonexistent summary: %v", err)
+	}
+}
+
 func TestSaveSummaryOverwrites(t *testing.T) {
 	db := testDB(t)
 

@@ -157,11 +157,7 @@ func (d *DB) PendingPrune(chatID int64, limit int) ([]provider.Message, error) {
 			return nil
 		}
 
-		count := 0
-		c := b.Cursor()
-		for k, _ := c.First(); k != nil; k, _ = c.Next() {
-			count++
-		}
+		count := b.Stats().KeyN
 
 		// Two messages will be appended (user + assistant).
 		toRemove := count + 2 - limit
@@ -169,6 +165,7 @@ func (d *DB) PendingPrune(chatID int64, limit int) ([]provider.Message, error) {
 			return nil
 		}
 
+		c := b.Cursor()
 		for k, v := c.First(); k != nil && len(msgs) < toRemove; k, v = c.Next() {
 			var m provider.Message
 			if err := json.Unmarshal(v, &m); err != nil {
