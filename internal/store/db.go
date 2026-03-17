@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	messagesBucket  = []byte("messages")
-	memoriesBucket  = []byte("memories")
+	messagesBucket   = []byte("messages")
+	memoriesBucket   = []byte("memories")
+	summariesBucket  = []byte("summaries")
 )
 
 // DB wraps a bbolt database for Herald storage.
@@ -30,7 +31,10 @@ func Open(path string) (*DB, error) {
 		if _, err := tx.CreateBucketIfNotExists(messagesBucket); err != nil {
 			return err
 		}
-		_, err := tx.CreateBucketIfNotExists(memoriesBucket)
+		if _, err := tx.CreateBucketIfNotExists(memoriesBucket); err != nil {
+			return err
+		}
+		_, err := tx.CreateBucketIfNotExists(summariesBucket)
 		return err
 	})
 	if err != nil {

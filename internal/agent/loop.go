@@ -22,11 +22,12 @@ import (
 type Loop struct {
 	hub                *hub.Hub
 	provider           provider.LLMProvider
-	extProvider        provider.LLMProvider // provider used for memory extraction
+	extProvider        provider.LLMProvider // provider used for memory extraction and summarization
 	store              *store.DB
 	metrics            *metrics.Metrics
 	historyLimit       int
 	historyTokenBudget int
+	summarize          bool
 	systemPrompt       string
 	startTime          time.Time
 	wg                 sync.WaitGroup
@@ -36,8 +37,9 @@ type Loop struct {
 // hardcoded prompt is used. The tokenBudget parameter controls the maximum
 // estimated tokens for history; a negative value disables token-based trimming
 // (zero is treated as "use default" by config loading). If m is nil, no
-// metrics are recorded.
-func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget int, systemPrompt string, m *metrics.Metrics) *Loop {
+// metrics are recorded. When summarize is true, old messages are summarized
+// before pruning.
+func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget int, summarize bool, systemPrompt string, m *metrics.Metrics) *Loop {
 	return &Loop{
 		hub:                h,
 		provider:           p,
@@ -46,6 +48,7 @@ func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, toke
 		metrics:            m,
 		historyLimit:       historyLimit,
 		historyTokenBudget: tokenBudget,
+		summarize:          summarize,
 		systemPrompt:       systemPrompt,
 		startTime:          time.Now(),
 	}
@@ -70,7 +73,7 @@ func pickExtractionProvider(p provider.LLMProvider) provider.LLMProvider {
 // StartTime returns when the loop was created.
 func (l *Loop) StartTime() time.Time { return l.startTime }
 
-// Wait blocks until all background memory extractions complete.
+// Wait blocks until all background operations (memory extraction, summarization) complete.
 func (l *Loop) Wait() { l.wg.Wait() }
 
 // Run starts the agent loop. It blocks until ctx is cancelled.
@@ -118,7 +121,7 @@ func (l *Loop) drainMessages() {
 	}
 }
 
-// drainExtractions waits for in-flight memory extractions to finish,
+// drainExtractions waits for in-flight background operations to finish,
 // with a 10-second timeout to avoid blocking shutdown indefinitely.
 func (l *Loop) drainExtractions() {
 	done := make(chan struct{})
@@ -159,6 +162,9 @@ func (l *Loop) handleClear(msg hub.InMessage) {
 		slog.Error("clear chat failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to clear history."}
 		return
+	}
+	if err := l.store.ClearSummary(msg.ChatID); err != nil {
+		slog.Error("clear summary failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 	}
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "History cleared."}
 }
@@ -274,11 +280,20 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		slog.Error("load memories failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
 	}
 
+	// Load conversation summary.
+	var summary string
+	if l.summarize {
+		summary, err = l.store.GetSummary(msg.ChatID)
+		if err != nil {
+			slog.Error("load summary failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
+		}
+	}
+
 	// Signal typing indicator before calling the provider.
 	l.hub.Typing <- msg.ChatID
 
 	// Build messages and call provider.
-	messages := buildMessages(history, memories, msg.Text, l.systemPrompt)
+	messages := buildMessages(history, memories, msg.Text, l.systemPrompt, summary)
 
 	// Attach images to the current user message (last in the list).
 	if len(msg.Images) > 0 {
@@ -336,6 +351,23 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		l.metrics.IncSent()
 	}
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: response}
+
+	// Summarize messages about to be pruned in the background.
+	if l.summarize {
+		l.wg.Add(1)
+		go func() {
+			defer l.wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("panic in summarization", slog.Int64("chat_id", msg.ChatID), slog.Any("panic", r))
+				}
+			}()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			l.maybeSummarize(ctx, msg.ChatID)
+		}()
+	}
 
 	// Skip extraction for trivial messages.
 	if isTrivialMessage(msg.Text) {
@@ -432,5 +464,56 @@ func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assi
 		if err := l.store.AddMemory(chatID, mem); err != nil {
 			slog.Warn("save extracted memory failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 		}
+	}
+}
+
+func (l *Loop) maybeSummarize(ctx context.Context, chatID int64) {
+	if l.extProvider == nil {
+		return
+	}
+
+	pending, err := l.store.PendingPrune(chatID, l.historyLimit)
+	if err != nil {
+		slog.Error("pending prune check failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+		return
+	}
+	if len(pending) == 0 {
+		return
+	}
+
+	existing, err := l.store.GetSummary(chatID)
+	if err != nil {
+		slog.Error("load existing summary failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+		return
+	}
+
+	var b strings.Builder
+	for _, m := range pending {
+		fmt.Fprintf(&b, "%s: %s\n", m.Role, m.Content)
+	}
+
+	sumCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	systemPrompt := "Summarize this conversation in 2-3 sentences. Preserve key facts, decisions, user preferences, and any commitments made. Be factual and concise. Do not add commentary."
+	userContent := b.String()
+	if existing != "" {
+		systemPrompt = "You are updating a running conversation summary. Merge the existing summary with the new messages into a single coherent summary of 2-4 sentences. Preserve key facts, decisions, user preferences, and any commitments. Be factual and concise. Do not add commentary."
+		userContent = fmt.Sprintf("Existing summary:\n%s\n\nNew messages:\n%s", existing, b.String())
+	}
+
+	msgs := []provider.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userContent},
+	}
+
+	summary, err := l.extProvider.Chat(sumCtx, msgs)
+	if err != nil {
+		slog.Error("summarization failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+		return
+	}
+
+	if err := l.store.SaveSummary(chatID, summary); err != nil {
+		slog.Error("save summary failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 	}
 }

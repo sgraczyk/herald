@@ -22,14 +22,17 @@ Formatting rules for Telegram:
 const maxContextMemories = 50
 
 // buildMessages assembles the full message list for the provider:
-// system prompt (with memories) + conversation history + current user message.
-func buildMessages(history []provider.Message, memories []store.Memory, userText string, customPrompt string) []provider.Message {
+// system prompt (with summary and memories) + conversation history + current user message.
+func buildMessages(history []provider.Message, memories []store.Memory, userText, customPrompt, summary string) []provider.Message {
 	msgs := make([]provider.Message, 0, len(history)+2)
 
 	selected := selectMemories(memories)
 	prompt := defaultSystemPrompt
 	if customPrompt != "" {
 		prompt = customPrompt
+	}
+	if summary != "" {
+		prompt += "\n\nSummary of earlier conversation:\n" + summary
 	}
 	if len(selected) > 0 {
 		var b strings.Builder

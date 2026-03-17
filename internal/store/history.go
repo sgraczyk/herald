@@ -141,6 +141,43 @@ func tokensForMessages(msgs []provider.Message) int {
 	return total
 }
 
+// PendingPrune returns messages that would be removed on the next two Appends
+// (user + assistant) if the history limit is reached. Returns nil if no pruning
+// would occur.
+func (d *DB) PendingPrune(chatID int64, limit int) ([]provider.Message, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	var msgs []provider.Message
+	err := d.bolt.View(func(tx *bolt.Tx) error {
+		root := tx.Bucket(messagesBucket)
+		b := root.Bucket(chatBucketKey(chatID))
+		if b == nil {
+			return nil
+		}
+
+		count := b.Stats().KeyN
+
+		// Two messages will be appended (user + assistant).
+		toRemove := count + 2 - limit
+		if toRemove <= 0 {
+			return nil
+		}
+
+		c := b.Cursor()
+		for k, v := c.First(); k != nil && len(msgs) < toRemove; k, v = c.Next() {
+			var m provider.Message
+			if err := json.Unmarshal(v, &m); err != nil {
+				return fmt.Errorf("unmarshal message: %w", err)
+			}
+			msgs = append(msgs, m)
+		}
+		return nil
+	})
+	return msgs, err
+}
+
 // Clear deletes all messages for a chat.
 func (d *DB) Clear(chatID int64) error {
 	return d.bolt.Update(func(tx *bolt.Tx) error {

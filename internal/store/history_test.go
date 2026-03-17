@@ -305,6 +305,74 @@ func TestListWithTokenBudget_Disabled(t *testing.T) {
 	}
 }
 
+func TestPendingPruneUnderLimit(t *testing.T) {
+	db := testDB(t)
+
+	for i := 0; i < 3; i++ {
+		if err := db.Append(1, msg("user", fmt.Sprintf("msg-%d", i)), 50); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+
+	// Limit 50, count 3, 3+2=5 <= 50, no pruning.
+	pending, err := db.PendingPrune(1, 50)
+	if err != nil {
+		t.Fatalf("pending prune: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("expected no pending prune, got %d", len(pending))
+	}
+}
+
+func TestPendingPruneOverLimit(t *testing.T) {
+	db := testDB(t)
+
+	for i := 0; i < 5; i++ {
+		if err := db.Append(1, msg("user", fmt.Sprintf("msg-%d", i)), 50); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+
+	// Limit 5, count 5, 5+2-5=2 messages would be pruned.
+	pending, err := db.PendingPrune(1, 5)
+	if err != nil {
+		t.Fatalf("pending prune: %v", err)
+	}
+	if len(pending) != 2 {
+		t.Fatalf("expected 2 pending prune messages, got %d", len(pending))
+	}
+	if pending[0].Content != "msg-0" {
+		t.Errorf("expected oldest message first, got %q", pending[0].Content)
+	}
+	if pending[1].Content != "msg-1" {
+		t.Errorf("expected second oldest message, got %q", pending[1].Content)
+	}
+}
+
+func TestPendingPruneEmptyChat(t *testing.T) {
+	db := testDB(t)
+
+	pending, err := db.PendingPrune(999, 5)
+	if err != nil {
+		t.Fatalf("pending prune: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("expected no pending prune for empty chat, got %d", len(pending))
+	}
+}
+
+func TestPendingPruneZeroLimit(t *testing.T) {
+	db := testDB(t)
+
+	pending, err := db.PendingPrune(1, 0)
+	if err != nil {
+		t.Fatalf("pending prune: %v", err)
+	}
+	if pending != nil {
+		t.Errorf("expected nil for zero limit, got %v", pending)
+	}
+}
+
 func TestOpenCreatesFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "new.db")
 	db, err := Open(path)

@@ -18,6 +18,7 @@ type Config struct {
 	HistoryTokenBudget int              `json:"history_token_budget,omitempty"`
 	MaxRetries         *int             `json:"max_retries,omitempty"`
 	LogLevel           string           `json:"log_level"`
+	Summarize          bool             `json:"summarize,omitempty"`
 	SystemPrompt       string           `json:"system_prompt,omitempty"`
 	AllowedUserIDs     []int64          `json:"-"`
 
