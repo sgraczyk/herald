@@ -57,6 +57,13 @@ func TestFallbackToSecond(t *testing.T) {
 	if fb.Name() != "secondary" {
 		t.Errorf("expected active 'secondary', got %q", fb.Name())
 	}
+	if active := fb.Active(); active == nil || active.Name() != "secondary" {
+		name := "<nil>"
+		if active != nil {
+			name = active.Name()
+		}
+		t.Errorf("Active() = %q after fallback, want %q", name, "secondary")
+	}
 }
 
 func TestFallbackAllFail(t *testing.T) {
