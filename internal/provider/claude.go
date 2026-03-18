@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -86,6 +87,92 @@ func (c *Claude) Chat(ctx context.Context, messages []Message) (string, error) {
 
 	c.setAuthStatus("ok")
 	return resp.Result, nil
+}
+
+// claudeStreamEvent is a single NDJSON line from `claude -p --output-format stream-json`.
+type claudeStreamEvent struct {
+	Type    string `json:"type"`
+	Result  string `json:"result"`
+	Message struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+	} `json:"message"`
+}
+
+// ChatStream sends a conversation to the Claude CLI in streaming mode and
+// calls fn with text deltas as they arrive.
+func (c *Claude) ChatStream(ctx context.Context, messages []Message, fn func(delta string)) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	input := buildClaudeInput(messages)
+
+	cmd := exec.CommandContext(ctx, "claude", "-p", "--output-format", "stream-json", "--verbose", "--allowedTools", "WebSearch,WebFetch")
+	cmd.Stdin = strings.NewReader(input)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("create stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("start claude: %w", err)
+	}
+
+	var prevText string
+	var result string
+
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		var evt claudeStreamEvent
+		if err := json.Unmarshal(line, &evt); err != nil {
+			continue
+		}
+
+		switch evt.Type {
+		case "assistant":
+			if len(evt.Message.Content) > 0 {
+				text := evt.Message.Content[0].Text
+				if len(text) > len(prevText) {
+					delta := text[len(prevText):]
+					fn(delta)
+					prevText = text
+				}
+			}
+		case "result":
+			result = evt.Result
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("read claude stdout: %w", err)
+	}
+
+	if err := cmd.Wait(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("execute claude: %w: %w", ErrTimeout, err)
+		}
+		return "", fmt.Errorf("execute claude: %w", err)
+	}
+
+	if result == "" {
+		return "", fmt.Errorf("empty response from claude stream")
+	}
+
+	c.setAuthStatus("ok")
+	return result, nil
 }
 
 // isAuthError checks if the error message indicates an authentication problem.

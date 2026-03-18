@@ -47,3 +47,13 @@ type LLMProvider interface {
 	// Chat sends a conversation to the LLM and returns the assistant's reply.
 	Chat(ctx context.Context, messages []Message) (string, error)
 }
+
+// StreamingProvider is an optional interface for providers that support
+// incremental response delivery.
+type StreamingProvider interface {
+	LLMProvider
+	// ChatStream sends a conversation and calls fn with text deltas as they arrive.
+	// Providers must check ctx.Done() between processing each event/line to allow
+	// prompt cancellation. Returns the complete response string on success.
+	ChatStream(ctx context.Context, messages []Message, fn func(delta string)) (string, error)
+}

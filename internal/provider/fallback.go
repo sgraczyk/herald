@@ -46,6 +46,23 @@ func (f *Fallback) Name() string {
 	return f.active
 }
 
+// Active returns the provider that last succeeded (or the first if none has
+// succeeded yet). This tracks fallback events in Chat(), so the streaming
+// path gets the correct provider after a fallback.
+func (f *Fallback) Active() LLMProvider {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	for _, p := range f.providers {
+		if strings.EqualFold(p.Name(), f.active) {
+			return p
+		}
+	}
+	if len(f.providers) == 0 {
+		return nil
+	}
+	return f.providers[0]
+}
+
 // Chat tries each provider in order and returns the first successful response.
 func (f *Fallback) Chat(ctx context.Context, messages []Message) (string, error) {
 	f.mu.RLock()

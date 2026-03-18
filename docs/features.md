@@ -52,6 +52,18 @@ A vision-capable OpenAI-compatible provider must be configured (e.g., a model wi
 - **WEBP passthrough.** WEBP images are not resized (no Go stdlib decoder without CGO) but are still subject to the 4 MB size cap.
 - **Single image per message.** Telegram sends one photo per message.
 
+## Streaming Responses
+
+Set `"streaming": true` in config to enable progressive response delivery. Instead of waiting for the full response, Herald shows text as it arrives from the LLM, editing the message in place.
+
+- Text updates are throttled to approximately once per second for a smooth experience.
+- A `...` indicator is appended during streaming and removed on the final update.
+- Mid-stream text is sent as plain text. The final message is formatted as HTML (matching non-streaming behavior).
+- If streaming fails mid-response, Herald deletes the partial message and retries with the full buffered fallback chain.
+- Streaming is automatically disabled during shutdown drain to avoid blocking.
+
+Streaming is opt-in and off by default. Both the Claude CLI and OpenAI-compatible providers support it.
+
 ## Response Handling
 
 ### Response Size Limit (10 MB)
@@ -82,6 +94,12 @@ Herald manages how much conversation history is sent to the AI using two indepen
 Both limits apply independently. The message count cap is applied first, then the token budget trims further if needed. At least one message is always kept, even if it alone exceeds the budget. Trimming is read-only -- stored history is unchanged.
 
 To disable token trimming, set `history_token_budget` to `-1`.
+
+### Conversation Summarization
+
+Set `"summarize": true` in config to preserve context from pruned messages. When history exceeds the configured limits, messages about to be dropped are summarized into 2-3 sentences. The summary is included in the system prompt for all future messages in that chat. `/clear` resets the summary along with history.
+
+Summarization is opt-in and off by default. It runs in the background after each response. If the summarization call fails, pruning proceeds normally without a summary.
 
 ## Custom Personality
 

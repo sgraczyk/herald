@@ -36,7 +36,7 @@ func testLoop(t *testing.T, p provider.LLMProvider) (*Loop, *hub.Hub, *store.DB)
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	l := NewLoop(h, p, db, 50, 8000, false, "", nil)
+	l := NewLoop(h, p, db, 50, 8000, false, false, "", nil)
 	return l, h, db
 }
 
@@ -690,7 +690,7 @@ func TestSummarizationBeforePrune(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	// Create loop with summarize=true and limit=4.
-	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, true, "", nil)
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, true, false, "", nil)
 
 	// Fill history to limit: 4 messages.
 	for i := 0; i < 4; i++ {
@@ -726,7 +726,7 @@ func TestSummarizationFailureDoesNotBreakFlow(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, true, "", nil)
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, true, false, "", nil)
 
 	// Fill history to limit.
 	for i := 0; i < 4; i++ {
@@ -761,7 +761,7 @@ func TestSummaryInContext(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	l := NewLoop(h, cap, db, 50, 8000, true, "", nil)
+	l := NewLoop(h, cap, db, 50, 8000, true, false, "", nil)
 	l.extProvider = cap
 
 	// Store a summary.

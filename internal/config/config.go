@@ -19,6 +19,7 @@ type Config struct {
 	MaxRetries         *int             `json:"max_retries,omitempty"`
 	LogLevel           string           `json:"log_level"`
 	Summarize          bool             `json:"summarize,omitempty"`
+	Streaming          bool             `json:"streaming,omitempty"`
 	SystemPrompt       string           `json:"system_prompt,omitempty"`
 	AllowedUserIDs     []int64          `json:"-"`
 

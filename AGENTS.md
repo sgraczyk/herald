@@ -33,6 +33,8 @@ Telegram ──write──> Hub.In ──read──> Agent Loop ──call──
                                          │
                                          ├──read/write──> Store (bbolt)
                                          │
+                                         ├──write──> Hub.Stream ──read──> Telegram (edit-in-place, plain text)
+                                         │
                                          └──write──> Hub.Out ──read──> Format (md→HTML) ──send──> Telegram
 ```
 
@@ -85,6 +87,7 @@ internal/
     db.go                    # bbolt init (go.etcd.io/bbolt, pure Go)
     history.go               # Conversation history per chat (bucket per chat_id)
     memory.go                # Long-term memory per chat (facts, preferences)
+    summary.go               # Conversation summary per chat (pre-prune condensation)
   telegram/
     adapter.go               # go-telegram/bot long-polling, user whitelist
 docs/

@@ -28,6 +28,7 @@ type Loop struct {
 	historyLimit       int
 	historyTokenBudget int
 	summarize          bool
+	streaming          bool
 	systemPrompt       string
 	startTime          time.Time
 	wg                 sync.WaitGroup
@@ -38,8 +39,9 @@ type Loop struct {
 // estimated tokens for history; a negative value disables token-based trimming
 // (zero is treated as "use default" by config loading). If m is nil, no
 // metrics are recorded. When summarize is true, old messages are summarized
-// before pruning.
-func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget int, summarize bool, systemPrompt string, m *metrics.Metrics) *Loop {
+// before pruning. When streaming is true, providers that implement
+// StreamingProvider are used for incremental response delivery.
+func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget int, summarize, streaming bool, systemPrompt string, m *metrics.Metrics) *Loop {
 	return &Loop{
 		hub:                h,
 		provider:           p,
@@ -49,6 +51,7 @@ func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, toke
 		historyLimit:       historyLimit,
 		historyTokenBudget: tokenBudget,
 		summarize:          summarize,
+		streaming:          streaming,
 		systemPrompt:       systemPrompt,
 		startTime:          time.Now(),
 	}
@@ -304,6 +307,27 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		}
 	}
 
+	// Streaming path: try streaming if enabled, not draining, and active
+	// provider supports it.
+	if l.streaming && !l.hub.Draining() {
+		if fb, ok := l.provider.(*provider.Fallback); ok {
+			if sp, ok := fb.Active().(provider.StreamingProvider); ok {
+				response, streamErr := l.handleStream(ctx, sp, messages, msg.ChatID)
+				if streamErr == nil {
+					l.saveAndProcess(msg, response)
+					return
+				}
+				slog.Warn("streaming failed, falling back to buffered",
+					slog.Int64("chat_id", msg.ChatID),
+					slog.String("error", streamErr.Error()),
+				)
+				// Signal adapter to delete in-progress message.
+				l.hub.Stream <- hub.StreamUpdate{ChatID: msg.ChatID, Text: "", Done: true}
+				// Fall through to buffered Chat().
+			}
+		}
+	}
+
 	response, err := l.provider.Chat(ctx, messages)
 	if err != nil {
 		if l.metrics != nil {
@@ -323,6 +347,21 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		return
 	}
 
+	l.saveAndRespond(msg, response)
+}
+
+// saveAndRespond saves messages to store, sends the response via hub.Out,
+// and triggers background memory extraction and summarization.
+func (l *Loop) saveAndRespond(msg hub.InMessage, response string) {
+	l.saveAndProcess(msg, response)
+	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: response}
+}
+
+// saveAndProcess saves messages to store and triggers background memory
+// extraction and summarization. Unlike saveAndRespond, it does NOT send the
+// response to hub.Out — use this when the response was already delivered
+// (e.g., via streaming).
+func (l *Loop) saveAndProcess(msg hub.InMessage, response string) {
 	// Save user message. Strip images — store text placeholder instead.
 	userContent := msg.Text
 	if len(msg.Images) > 0 {
@@ -350,7 +389,6 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	if l.metrics != nil {
 		l.metrics.IncSent()
 	}
-	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: response}
 
 	// Summarize messages about to be pruned in the background.
 	if l.summarize {
@@ -388,6 +426,37 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		defer cancel()
 		l.extractMemories(ctx, msg.ChatID, msg.Text, response)
 	}()
+}
+
+// handleStream calls ChatStream on the provider and sends streaming updates
+// to the hub. Returns the complete response or an error.
+func (l *Loop) handleStream(ctx context.Context, sp provider.StreamingProvider, messages []provider.Message, chatID int64) (string, error) {
+	var accumulated strings.Builder
+	lastEmit := time.Now()
+
+	response, err := sp.ChatStream(ctx, messages, func(delta string) {
+		accumulated.WriteString(delta)
+		if time.Since(lastEmit) >= time.Second {
+			l.hub.Stream <- hub.StreamUpdate{
+				ChatID: chatID,
+				Text:   accumulated.String() + "...",
+				Done:   false,
+			}
+			lastEmit = time.Now()
+		}
+	})
+	if err != nil {
+		return "", err
+	}
+
+	// Send final update with the complete response (no "...").
+	l.hub.Stream <- hub.StreamUpdate{
+		ChatID: chatID,
+		Text:   response,
+		Done:   true,
+	}
+
+	return response, nil
 }
 
 // isTrivialMessage returns true for messages too short to contain memorable content.

@@ -8,6 +8,10 @@ Herald receives Markdown responses from AI providers (Claude CLI, OpenAI-compati
 
 Telegram only supports a small set of HTML tags. Herald's converter maps standard Markdown to these tags, and converts unsupported elements (tables, images, headings) into readable alternatives.
 
+### Streaming Mode
+
+When [streaming](features.md#streaming-responses) is enabled, mid-stream updates are sent as plain text (no HTML formatting). The final update is converted to Telegram HTML like any other response. This avoids repeatedly parsing and re-rendering incomplete Markdown while the response is still arriving.
+
 ## Supported Formatting
 
 | Markdown | Telegram Result |
