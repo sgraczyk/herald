@@ -88,6 +88,7 @@ internal/
     history.go               # Conversation history per chat (bucket per chat_id)
     memory.go                # Long-term memory per chat (facts, preferences)
     summary.go               # Conversation summary per chat (pre-prune condensation)
+    conversation.go          # Conversation archival and listing
   telegram/
     adapter.go               # go-telegram/bot long-polling, user whitelist
 docs/

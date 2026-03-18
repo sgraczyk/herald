@@ -22,12 +22,14 @@ import (
 // Keep in sync with the switch in agent.Loop.handle (internal/agent/loop.go).
 // Unknown commands keep full original text so the LLM sees the user's intent.
 var knownCommands = map[string]bool{
-	"/clear":    true,
-	"/model":    true,
-	"/status":   true,
-	"/remember": true,
-	"/forget":   true,
-	"/memories": true,
+	"/clear":         true,
+	"/model":         true,
+	"/status":        true,
+	"/remember":      true,
+	"/forget":        true,
+	"/memories":      true,
+	"/new":           true,
+	"/conversations": true,
 }
 
 // Adapter connects Telegram to the Hub via long polling.

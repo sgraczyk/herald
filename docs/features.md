@@ -101,6 +101,14 @@ Set `"summarize": true` in config to preserve context from pruned messages. When
 
 Summarization is opt-in and off by default. It runs in the background after each response. If the summarization call fails, pruning proceeds normally without a summary.
 
+## Conversation Archival
+
+Use `/new` to start a fresh conversation. Herald archives the current messages and summary, then clears the active chat. Your memories (facts, preferences) are preserved -- only the message history resets.
+
+Use `/conversations` to see your archived conversations. Each entry shows the timestamp, message count, and a preview of the first message.
+
+`/clear` still works as before -- it deletes history without archiving.
+
 ## Custom Personality
 
 You can change how Herald talks by setting `system_prompt` in `config.json`. No rebuilding needed -- edit and restart.
@@ -140,6 +148,8 @@ Herald logs a warning at startup if the prompt exceeds 4000 characters. It still
 | `/remember` | Save a fact to long-term memory |
 | `/forget` | Remove a specific memory |
 | `/memories` | List all stored memories |
+| `/new` | Archive current conversation and start fresh (memories are kept) |
+| `/conversations` | List past archived conversations |
 
 ### Unrecognized Commands
 
