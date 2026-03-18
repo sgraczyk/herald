@@ -314,8 +314,9 @@ func (l *Loop) handleConversations(msg hub.InMessage) {
 func firstUserPreview(msgs []provider.Message) string {
 	for _, m := range msgs {
 		if m.Role == "user" && m.Content != "" {
-			if len(m.Content) > 50 {
-				return m.Content[:50] + "..."
+			runes := []rune(m.Content)
+			if len(runes) > 50 {
+				return string(runes[:50]) + "..."
 			}
 			return m.Content
 		}
