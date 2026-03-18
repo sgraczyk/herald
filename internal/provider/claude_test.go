@@ -41,7 +41,8 @@ func TestScanClaudeStreamSingleAssistant(t *testing.T) {
 {"type":"result","result":"Hello, world!"}
 `
 	var deltas []string
-	result, err := scanClaudeStream(context.Background(), strings.NewReader(input), func(delta string) {
+	c := NewClaude()
+	result, err := c.scanClaudeStream(context.Background(), strings.NewReader(input), func(delta string) {
 		deltas = append(deltas, delta)
 	})
 	if err != nil {
@@ -65,7 +66,8 @@ func TestScanClaudeStreamMultipleAssistants(t *testing.T) {
 {"type":"result","result":"Hello, world!"}
 `
 	var deltas []string
-	result, err := scanClaudeStream(context.Background(), strings.NewReader(input), func(delta string) {
+	c := NewClaude()
+	result, err := c.scanClaudeStream(context.Background(), strings.NewReader(input), func(delta string) {
 		deltas = append(deltas, delta)
 	})
 	if err != nil {
@@ -91,7 +93,8 @@ func TestScanClaudeStreamEmptyContent(t *testing.T) {
 {"type":"result","result":"done"}
 `
 	var fnCalled int
-	result, err := scanClaudeStream(context.Background(), strings.NewReader(input), func(delta string) {
+	c := NewClaude()
+	result, err := c.scanClaudeStream(context.Background(), strings.NewReader(input), func(delta string) {
 		fnCalled++
 	})
 	if err != nil {
@@ -109,7 +112,8 @@ func TestScanClaudeStreamNoResult(t *testing.T) {
 	input := `{"type":"init"}
 {"type":"assistant","message":{"content":[{"text":"Hello"}]}}
 `
-	result, err := scanClaudeStream(context.Background(), strings.NewReader(input), func(delta string) {})
+	c := NewClaude()
+	result, err := c.scanClaudeStream(context.Background(), strings.NewReader(input), func(delta string) {})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -127,7 +131,8 @@ func TestScanClaudeStreamContextCancellation(t *testing.T) {
 	input := `{"type":"init"}
 {"type":"assistant","message":{"content":[{"text":"Hello"}]}}
 `
-	_, err := scanClaudeStream(ctx, strings.NewReader(input), func(delta string) {})
+	c := NewClaude()
+	_, err := c.scanClaudeStream(ctx, strings.NewReader(input), func(delta string) {})
 	if err != context.Canceled {
 		t.Errorf("err = %v, want context.Canceled", err)
 	}

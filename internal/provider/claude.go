@@ -23,8 +23,9 @@ type claudeResponse struct {
 type Claude struct {
 	timeout time.Duration
 
-	mu         sync.RWMutex
-	authStatus string // "ok", "auth_error", or "" (unknown)
+	mu             sync.RWMutex
+	authStatus     string // "ok", "auth_error", or "" (unknown)
+	streamWarnOnce sync.Once
 }
 
 // NewClaude creates a new Claude CLI provider.
@@ -102,9 +103,6 @@ type claudeStreamEvent struct {
 	} `json:"message"`
 }
 
-// streamWarnOnce guards the single-shot streaming warning so it logs at most once.
-var streamWarnOnce sync.Once
-
 // ChatStream sends a conversation to the Claude CLI in streaming mode and
 // calls fn with text deltas as they arrive.
 //
@@ -130,7 +128,7 @@ func (c *Claude) ChatStream(ctx context.Context, messages []Message, fn func(del
 		return "", fmt.Errorf("start claude: %w", err)
 	}
 
-	result, err := scanClaudeStream(ctx, stdout, fn)
+	result, err := c.scanClaudeStream(ctx, stdout, fn)
 	if err != nil {
 		return "", err
 	}
@@ -152,7 +150,7 @@ func (c *Claude) ChatStream(ctx context.Context, messages []Message, fn func(del
 
 // scanClaudeStream reads NDJSON events from r, calls fn with text deltas,
 // and returns the final result string.
-func scanClaudeStream(ctx context.Context, r io.Reader, fn func(delta string)) (string, error) {
+func (c *Claude) scanClaudeStream(ctx context.Context, r io.Reader, fn func(delta string)) (string, error) {
 	var prevText string
 	var result string
 	var fnCalls int
@@ -196,7 +194,7 @@ func scanClaudeStream(ctx context.Context, r io.Reader, fn func(delta string)) (
 	}
 
 	if fnCalls == 1 {
-		streamWarnOnce.Do(func() {
+		c.streamWarnOnce.Do(func() {
 			slog.Warn("claude CLI stream-json delivered single event; streaming is single-shot, not incremental")
 		})
 	}
