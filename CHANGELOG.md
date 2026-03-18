@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0](https://github.com/sgraczyk/herald/compare/v0.5.0...v0.6.0) (2026-03-18)
+
+
+### Features
+
+* **agent:** summarize conversation before history pruning ([#139](https://github.com/sgraczyk/herald/issues/139)) ([235ef0b](https://github.com/sgraczyk/herald/commit/235ef0b61750511958b3760d5bda0ca85e4e49d9))
+* **store:** add conversation archival with /new and /conversations ([#142](https://github.com/sgraczyk/herald/issues/142)) ([543a025](https://github.com/sgraczyk/herald/commit/543a025c586b6f6e65af03ffd6b953e1008df01b))
+* streaming responses via edit-in-place ([#84](https://github.com/sgraczyk/herald/issues/84)) ([#141](https://github.com/sgraczyk/herald/issues/141)) ([b03b746](https://github.com/sgraczyk/herald/commit/b03b7461c64b7b29aa89ff9a894428b9ff16cd34))
+
 ## [0.5.0](https://github.com/sgraczyk/herald/compare/v0.4.0...v0.5.0) (2026-03-10)
 
 
