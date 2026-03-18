@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"sync"
@@ -100,8 +102,16 @@ type claudeStreamEvent struct {
 	} `json:"message"`
 }
 
+// streamWarnOnce guards the single-shot streaming warning so it logs at most once.
+var streamWarnOnce sync.Once
+
 // ChatStream sends a conversation to the Claude CLI in streaming mode and
 // calls fn with text deltas as they arrive.
+//
+// Note: Claude CLI's --output-format stream-json currently emits only three
+// NDJSON events: "init", one "assistant" (with the complete response), and
+// "result". It does not produce token-level incremental deltas, so streaming
+// effectively degrades to single-shot delivery.
 func (c *Claude) ChatStream(ctx context.Context, messages []Message, fn func(delta string)) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
@@ -120,10 +130,34 @@ func (c *Claude) ChatStream(ctx context.Context, messages []Message, fn func(del
 		return "", fmt.Errorf("start claude: %w", err)
 	}
 
+	result, err := scanClaudeStream(ctx, stdout, fn)
+	if err != nil {
+		return "", err
+	}
+
+	if err := cmd.Wait(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("execute claude: %w: %w", ErrTimeout, err)
+		}
+		return "", fmt.Errorf("execute claude: %w", err)
+	}
+
+	if result == "" {
+		return "", fmt.Errorf("empty response from claude stream")
+	}
+
+	c.setAuthStatus("ok")
+	return result, nil
+}
+
+// scanClaudeStream reads NDJSON events from r, calls fn with text deltas,
+// and returns the final result string.
+func scanClaudeStream(ctx context.Context, r io.Reader, fn func(delta string)) (string, error) {
 	var prevText string
 	var result string
+	var fnCalls int
 
-	scanner := bufio.NewScanner(stdout)
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
@@ -148,6 +182,7 @@ func (c *Claude) ChatStream(ctx context.Context, messages []Message, fn func(del
 				if len(text) > len(prevText) {
 					delta := text[len(prevText):]
 					fn(delta)
+					fnCalls++
 					prevText = text
 				}
 			}
@@ -160,18 +195,12 @@ func (c *Claude) ChatStream(ctx context.Context, messages []Message, fn func(del
 		return "", fmt.Errorf("read claude stdout: %w", err)
 	}
 
-	if err := cmd.Wait(); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("execute claude: %w: %w", ErrTimeout, err)
-		}
-		return "", fmt.Errorf("execute claude: %w", err)
+	if fnCalls == 1 {
+		streamWarnOnce.Do(func() {
+			slog.Warn("claude CLI stream-json delivered single event; streaming is single-shot, not incremental")
+		})
 	}
 
-	if result == "" {
-		return "", fmt.Errorf("empty response from claude stream")
-	}
-
-	c.setAuthStatus("ok")
 	return result, nil
 }
 

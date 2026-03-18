@@ -1,6 +1,10 @@
 package provider
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+)
 
 func TestIsAuthError(t *testing.T) {
 	tests := []struct {
@@ -28,6 +32,104 @@ func TestClaudeAuthStatusInitiallyEmpty(t *testing.T) {
 	c := NewClaude()
 	if got := c.AuthStatus(); got != "" {
 		t.Errorf("expected empty initial auth status, got %q", got)
+	}
+}
+
+func TestScanClaudeStreamSingleAssistant(t *testing.T) {
+	input := `{"type":"init"}
+{"type":"assistant","message":{"content":[{"text":"Hello, world!"}]}}
+{"type":"result","result":"Hello, world!"}
+`
+	var deltas []string
+	result, err := scanClaudeStream(context.Background(), strings.NewReader(input), func(delta string) {
+		deltas = append(deltas, delta)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "Hello, world!" {
+		t.Errorf("result = %q, want %q", result, "Hello, world!")
+	}
+	if len(deltas) != 1 {
+		t.Fatalf("fn called %d times, want 1", len(deltas))
+	}
+	if deltas[0] != "Hello, world!" {
+		t.Errorf("delta[0] = %q, want %q", deltas[0], "Hello, world!")
+	}
+}
+
+func TestScanClaudeStreamMultipleAssistants(t *testing.T) {
+	input := `{"type":"init"}
+{"type":"assistant","message":{"content":[{"text":"Hello"}]}}
+{"type":"assistant","message":{"content":[{"text":"Hello, world!"}]}}
+{"type":"result","result":"Hello, world!"}
+`
+	var deltas []string
+	result, err := scanClaudeStream(context.Background(), strings.NewReader(input), func(delta string) {
+		deltas = append(deltas, delta)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "Hello, world!" {
+		t.Errorf("result = %q, want %q", result, "Hello, world!")
+	}
+	if len(deltas) != 2 {
+		t.Fatalf("fn called %d times, want 2", len(deltas))
+	}
+	if deltas[0] != "Hello" {
+		t.Errorf("delta[0] = %q, want %q", deltas[0], "Hello")
+	}
+	if deltas[1] != ", world!" {
+		t.Errorf("delta[1] = %q, want %q", deltas[1], ", world!")
+	}
+}
+
+func TestScanClaudeStreamEmptyContent(t *testing.T) {
+	input := `{"type":"init"}
+{"type":"assistant","message":{"content":[{"text":""}]}}
+{"type":"result","result":"done"}
+`
+	var fnCalled int
+	result, err := scanClaudeStream(context.Background(), strings.NewReader(input), func(delta string) {
+		fnCalled++
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "done" {
+		t.Errorf("result = %q, want %q", result, "done")
+	}
+	if fnCalled != 0 {
+		t.Errorf("fn called %d times, want 0", fnCalled)
+	}
+}
+
+func TestScanClaudeStreamNoResult(t *testing.T) {
+	input := `{"type":"init"}
+{"type":"assistant","message":{"content":[{"text":"Hello"}]}}
+`
+	result, err := scanClaudeStream(context.Background(), strings.NewReader(input), func(delta string) {})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "" {
+		t.Errorf("result = %q, want empty string", result)
+	}
+}
+
+func TestScanClaudeStreamContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Use a reader that blocks, but context is already cancelled so the
+	// select in the loop should catch it after scanning the first line.
+	input := `{"type":"init"}
+{"type":"assistant","message":{"content":[{"text":"Hello"}]}}
+`
+	_, err := scanClaudeStream(ctx, strings.NewReader(input), func(delta string) {})
+	if err != context.Canceled {
+		t.Errorf("err = %v, want context.Canceled", err)
 	}
 }
 
