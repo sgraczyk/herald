@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/sgraczyk/herald/compare/v0.6.0...v0.6.1) (2026-03-18)
+
+
+### Bug Fixes
+
+* **provider:** handle single-shot streaming from Claude CLI ([#144](https://github.com/sgraczyk/herald/issues/144)) ([def2166](https://github.com/sgraczyk/herald/commit/def216677aae25be28752a89d3d0da4e7472172a))
+
 ## [0.6.0](https://github.com/sgraczyk/herald/compare/v0.5.0...v0.6.0) (2026-03-18)
 
 
