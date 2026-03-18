@@ -62,7 +62,7 @@ Set `"streaming": true` in config to enable progressive response delivery. Inste
 - If streaming fails mid-response, Herald deletes the partial message and retries with the full buffered fallback chain.
 - Streaming is automatically disabled during shutdown drain to avoid blocking.
 
-Streaming is opt-in and off by default. Both the Claude CLI and OpenAI-compatible providers support it.
+Streaming is opt-in and off by default. Both the Claude CLI and OpenAI-compatible providers support the streaming interface, but Claude CLI delivers the full response in a single shot rather than incremental tokens (a CLI limitation). OpenAI-compatible providers stream incrementally as expected. Herald logs a one-time warning when it detects single-shot delivery.
 
 ## Response Handling
 
