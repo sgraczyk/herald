@@ -34,7 +34,10 @@ func Open(path string) (*DB, error) {
 		if _, err := tx.CreateBucketIfNotExists(memoriesBucket); err != nil {
 			return err
 		}
-		_, err := tx.CreateBucketIfNotExists(summariesBucket)
+		if _, err := tx.CreateBucketIfNotExists(summariesBucket); err != nil {
+			return err
+		}
+		_, err := tx.CreateBucketIfNotExists(archivesBucket)
 		return err
 	})
 	if err != nil {

@@ -155,6 +155,10 @@ func (l *Loop) handle(ctx context.Context, msg hub.InMessage) {
 		l.handleForget(msg)
 	case "/memories":
 		l.handleMemories(msg)
+	case "/new":
+		l.handleNew(msg)
+	case "/conversations":
+		l.handleConversations(msg)
 	default:
 		l.handleMessage(ctx, msg)
 	}
@@ -266,6 +270,57 @@ func (l *Loop) handleMemories(msg hub.InMessage) {
 		fmt.Fprintf(&b, "- %s [%s]\n", m.Fact, m.Source)
 	}
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: b.String()}
+}
+
+func (l *Loop) handleNew(msg hub.InMessage) {
+	archived, err := l.store.ArchiveConversation(msg.ChatID)
+	if err != nil {
+		slog.Error("archive conversation failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to archive conversation."}
+		return
+	}
+	if !archived {
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "No active conversation to archive."}
+		return
+	}
+	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Conversation archived. Starting fresh."}
+}
+
+func (l *Loop) handleConversations(msg hub.InMessage) {
+	convs, err := l.store.ListArchived(msg.ChatID)
+	if err != nil {
+		slog.Error("list archived failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to list conversations."}
+		return
+	}
+	if len(convs) == 0 {
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "No archived conversations."}
+		return
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Archived conversations (%d):\n", len(convs))
+	for _, c := range convs {
+		preview := firstUserPreview(c.Messages)
+		fmt.Fprintf(&b, "\n%s — %d msgs", c.Timestamp.Format("2006-01-02 15:04"), len(c.Messages))
+		if preview != "" {
+			fmt.Fprintf(&b, "\n  %s", preview)
+		}
+	}
+	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: b.String()}
+}
+
+// firstUserPreview returns the first 50 characters of the first user message.
+func firstUserPreview(msgs []provider.Message) string {
+	for _, m := range msgs {
+		if m.Role == "user" && m.Content != "" {
+			if len(m.Content) > 50 {
+				return m.Content[:50] + "..."
+			}
+			return m.Content
+		}
+	}
+	return ""
 }
 
 func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
