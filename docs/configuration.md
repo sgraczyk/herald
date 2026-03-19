@@ -56,6 +56,7 @@ Then run `./herald`. Herald looks for `config.json` in the current directory by 
   "http_port": 8080,
   "history_limit": 50,
   "history_token_budget": 8000,
+  "max_document_tokens": 4000,
   "summarize": false,
   "streaming": false,
   "max_retries": 1,
@@ -78,6 +79,7 @@ Then run `./herald`. Herald looks for `config.json` in the current directory by 
 | `http_port` | integer | No | `0` (disabled) | Health check HTTP endpoint port (0--65535) |
 | `history_limit` | integer | No | `50` | Max messages per chat |
 | `history_token_budget` | integer | No | `8000` | Estimated token budget for conversation history. Oldest messages are dropped when history exceeds this budget. Negative value disables token trimming. |
+| `max_document_tokens` | integer | No | `4000` | Max estimated tokens for extracted document text. PDFs exceeding this budget are truncated by page. ~4 characters per token. |
 | `summarize` | boolean | No | `false` | Summarize pruned messages to preserve context across history trims |
 | `streaming` | boolean | No | `false` | Stream responses progressively via edit-in-place (see [Streaming Responses](features.md#streaming-responses)) |
 | `max_retries` | integer | No | `1` | Retries per provider for transient errors (timeouts, server errors). Set to `0` to disable. |
@@ -131,6 +133,13 @@ Works with any OpenAI chat completions API: Chutes.ai, Groq, OpenRouter, local O
 |----------|:------:|-------|
 | OpenAI-compatible | Yes | Requires vision-capable model (`VL` suffix) |
 | Claude CLI | No | Pipe mode is text-only; images fall back to OpenAI provider |
+
+### Document Support
+
+| Format | Supported | Notes |
+|--------|:---------:|-------|
+| PDF (text-based) | Yes | Pure-Go extraction, max 10 MB, text truncated to `max_document_tokens` |
+| PDF (scanned/image) | No | Requires OCR — not supported yet |
 
 ### Recommended Setup
 

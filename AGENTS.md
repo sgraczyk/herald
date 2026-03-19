@@ -54,6 +54,7 @@ Telegram ──write──> Hub.In ──read──> Agent Loop ──call──
 | `github.com/spf13/cobra` | CLI framework |
 | `github.com/yuin/goldmark` | Markdown parser |
 | `go.etcd.io/bbolt` | Embedded key/value store |
+| `github.com/ledongthuc/pdf` | PDF text extraction |
 
 No CGO. Single static binary.
 
@@ -67,6 +68,9 @@ internal/
     context.go               # System prompt assembly (personality + memory + history)
   config/
     config.go                # Config file loading and validation
+  document/
+    document.go              # Extractor interface, Document struct
+    pdf.go                   # PDF text extraction (ledongthuc/pdf)
   format/
     telegram.go              # Markdown → Telegram HTML converter (goldmark-based)
     split.go                 # Message splitting for Telegram length limits

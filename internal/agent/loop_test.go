@@ -797,6 +797,34 @@ func TestBuildMessagesWithSummary(t *testing.T) {
 	}
 }
 
+func TestFormatDocumentContext(t *testing.T) {
+	doc := &hub.DocumentAttachment{
+		Name:       "invoice.pdf",
+		Pages:      3,
+		Text:       "Some invoice text",
+		Truncated:  false,
+		ShownPages: 3,
+	}
+	got := formatDocumentContext(doc)
+	if !strings.Contains(got, "--- Document: invoice.pdf (3 pages) ---") {
+		t.Errorf("expected non-truncated header, got %q", got)
+	}
+	if !strings.Contains(got, "--- End of document ---") {
+		t.Errorf("expected end marker, got %q", got)
+	}
+
+	doc.Truncated = true
+	doc.Pages = 5
+	doc.ShownPages = 3
+	got = formatDocumentContext(doc)
+	if !strings.Contains(got, "(3/5 pages shown)") {
+		t.Errorf("expected truncated header, got %q", got)
+	}
+	if !strings.Contains(got, "2 pages omitted") {
+		t.Errorf("expected omitted note, got %q", got)
+	}
+}
+
 // errorOnNthProvider returns an error on a specific call index.
 // The counter is atomic to support concurrent goroutines.
 type errorOnNthProvider struct {
@@ -816,4 +844,155 @@ func (e *errorOnNthProvider) Chat(_ context.Context, _ []provider.Message) (stri
 		return e.responses[idx], nil
 	}
 	return "[]", nil
+}
+
+func TestHandleMessageWithDocument(t *testing.T) {
+	cap := &capturingProvider{responses: []string{"I see an invoice.", "[]"}}
+	l, h, db := testLoop(t, cap)
+	l.extProvider = cap
+
+	doc := &hub.DocumentAttachment{
+		Name:       "invoice.pdf",
+		MimeType:   "application/pdf",
+		Pages:      2,
+		Text:       "Invoice #123\nTotal: $500",
+		Truncated:  false,
+		ShownPages: 2,
+	}
+
+	l.handle(context.Background(), hub.InMessage{
+		ChatID:   1,
+		Text:     "What's the total?",
+		Document: doc,
+	})
+	out := readOut(t, h)
+	l.Wait()
+
+	if out.Text != "I see an invoice." {
+		t.Errorf("expected 'I see an invoice.', got %q", out.Text)
+	}
+
+	// Verify the provider received a system message with document context.
+	if len(cap.captured) == 0 {
+		t.Fatal("provider was never called")
+	}
+	msgs := cap.captured[0]
+	found := false
+	for _, m := range msgs {
+		if m.Role == "system" && strings.Contains(m.Content, "--- Document: invoice.pdf") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected document system message in provider context")
+	}
+
+	// Verify document is stored in history.
+	stored, _ := db.List(1)
+	docFound := false
+	for _, m := range stored {
+		if m.Role == "system" && strings.Contains(m.Content, "Invoice #123") {
+			docFound = true
+		}
+	}
+	if !docFound {
+		t.Error("expected document system message in stored history")
+	}
+
+	// Verify user message has placeholder.
+	userFound := false
+	for _, m := range stored {
+		if m.Role == "user" && strings.Contains(m.Content, "[document: invoice.pdf]") {
+			userFound = true
+		}
+	}
+	if !userFound {
+		t.Error("expected user message with document placeholder in stored history")
+	}
+}
+
+func TestDocumentPersistsForFollowUp(t *testing.T) {
+	cap := &capturingProvider{responses: []string{"The total is $500.", "[]", "The date is Jan 1.", "[]"}}
+	l, h, _ := testLoop(t, cap)
+	l.extProvider = cap
+
+	doc := &hub.DocumentAttachment{
+		Name:       "invoice.pdf",
+		MimeType:   "application/pdf",
+		Pages:      1,
+		Text:       "Invoice #123\nTotal: $500\nDate: Jan 1",
+		ShownPages: 1,
+	}
+
+	// First message with document.
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "What's the total?", Document: doc})
+	readOut(t, h)
+	l.Wait()
+
+	// Follow-up without document.
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "What's the date?"})
+	readOut(t, h)
+	l.Wait()
+
+	// Check all captured calls for one that has both the document and the follow-up question.
+	found := false
+	for _, msgs := range cap.captured {
+		hasDoc := false
+		hasFollowUp := false
+		for _, m := range msgs {
+			if m.Role == "system" && strings.Contains(m.Content, "Invoice #123") {
+				hasDoc = true
+			}
+			if m.Role == "user" && m.Content == "What's the date?" {
+				hasFollowUp = true
+			}
+		}
+		if hasDoc && hasFollowUp {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected follow-up call to include document from history")
+	}
+}
+
+func TestSummarizationCompactsDocumentText(t *testing.T) {
+	h := hub.New()
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	// Create loop with summarize=true and limit=4.
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, true, false, "", nil)
+
+	// Fill history: a document system message + 3 regular messages = 4 total.
+	longDocText := "--- Document: invoice.pdf (2 pages) ---\n" + strings.Repeat("Invoice line item. ", 500) + "\n--- End of document ---"
+	_ = db.Append(1, provider.Message{Role: "system", Content: longDocText}, 50)
+	_ = db.Append(1, provider.Message{Role: "user", Content: "What's the total?"}, 50)
+	_ = db.Append(1, provider.Message{Role: "assistant", Content: "The total is $500."}, 50)
+	_ = db.Append(1, provider.Message{Role: "user", Content: "msg-3"}, 50)
+
+	// Provider: 1st = chat response, 2nd = summarization call.
+	cap := &capturingProvider{responses: []string{"chat reply", "Summary: user discussed an invoice."}}
+	l.provider = cap
+	l.extProvider = cap
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "hi"})
+	readOut(t, h)
+	l.Wait()
+
+	// The summarization call is the second captured call (first is the main chat response).
+	// It should contain the compacted header, NOT the full document text.
+	if len(cap.captured) < 2 {
+		t.Fatalf("expected at least 2 provider calls (chat + summarization), got %d", len(cap.captured))
+	}
+	for _, m := range cap.captured[1] {
+		if strings.Contains(m.Content, "Invoice line item.") {
+			t.Error("summarization call should not contain full document text, expected compacted header only")
+		}
+	}
 }

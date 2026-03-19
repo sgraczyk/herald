@@ -354,6 +354,16 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	// Build messages and call provider.
 	messages := buildMessages(history, memories, msg.Text, l.systemPrompt, summary)
 
+	// Inject document context as a system message just before the user message.
+	if msg.Document != nil {
+		docMsg := provider.Message{
+			Role:    "system",
+			Content: formatDocumentContext(msg.Document),
+		}
+		// Insert before the last element (the current user message).
+		messages = append(messages[:len(messages)-1], append([]provider.Message{docMsg}, messages[len(messages)-1])...)
+	}
+
 	// Attach images to the current user message (last in the list).
 	if len(msg.Images) > 0 {
 		last := &messages[len(messages)-1]
@@ -418,10 +428,25 @@ func (l *Loop) saveAndRespond(msg hub.InMessage, response string) {
 // response to hub.Out — use this when the response was already delivered
 // (e.g., via streaming).
 func (l *Loop) saveAndProcess(msg hub.InMessage, response string) {
+	// Save document as a system-role history message before the user message.
+	if msg.Document != nil {
+		docMsg := provider.Message{
+			Role:      "system",
+			Content:   formatDocumentContext(msg.Document),
+			Timestamp: time.Now(),
+		}
+		if err := l.store.Append(msg.ChatID, docMsg, l.historyLimit); err != nil {
+			slog.Error("save document message failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
+		}
+	}
+
 	// Save user message. Strip images — store text placeholder instead.
 	userContent := msg.Text
 	if len(msg.Images) > 0 {
 		userContent = "[image] " + msg.Text
+	}
+	if msg.Document != nil {
+		userContent = fmt.Sprintf("[document: %s] %s", msg.Document.Name, userContent)
 	}
 	userMsg := provider.Message{
 		Role:      "user",
@@ -521,6 +546,21 @@ func isTrivialMessage(text string) bool {
 	return len(text) < 10 || !strings.Contains(text, " ")
 }
 
+// formatDocumentContext formats a document attachment for injection into
+// conversation context as a system message.
+func formatDocumentContext(doc *hub.DocumentAttachment) string {
+	var header, footer string
+	if doc.Truncated {
+		header = fmt.Sprintf("--- Document: %s (%d/%d pages shown) ---", doc.Name, doc.ShownPages, doc.Pages)
+		omitted := doc.Pages - doc.ShownPages
+		footer = fmt.Sprintf("--- End of document (%d pages omitted due to length) ---", omitted)
+	} else {
+		header = fmt.Sprintf("--- Document: %s (%d pages) ---", doc.Name, doc.Pages)
+		footer = "--- End of document ---"
+	}
+	return header + "\n" + doc.Text + "\n" + footer
+}
+
 const extractionPrompt = `Extract notable facts, preferences, or personal details about the user from this exchange. Return ONLY a JSON array of short factual strings, or an empty array [] if nothing is worth remembering.
 
 Rules:
@@ -614,7 +654,14 @@ func (l *Loop) maybeSummarize(ctx context.Context, chatID int64) {
 
 	var b strings.Builder
 	for _, m := range pending {
-		fmt.Fprintf(&b, "%s: %s\n", m.Role, m.Content)
+		content := m.Content
+		// Replace large document text with a short placeholder for the summarizer.
+		if m.Role == "system" && strings.HasPrefix(content, "--- Document:") {
+			if idx := strings.Index(content, "\n"); idx > 0 {
+				content = content[:idx]
+			}
+		}
+		fmt.Fprintf(&b, "%s: %s\n", m.Role, content)
 	}
 
 	sumCtx, cancel := context.WithTimeout(ctx, 30*time.Second)

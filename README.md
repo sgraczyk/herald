@@ -15,6 +15,7 @@ Lightweight, self-hosted AI assistant bot for Telegram.
 - **CLI mode** — test locally with `./herald ask "question"` without Telegram
 - **Telegram commands** — `/clear` resets context, `/model` switches providers, `/status` shows bot info
 - **Image support** — understands photos sent in Telegram chats
+- **PDF support** — reads text-based PDFs sent in Telegram chats
 - **Single binary** — no CGO, no Docker, no external dependencies at runtime
 
 ## Quick Start

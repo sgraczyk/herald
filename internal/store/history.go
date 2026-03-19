@@ -141,9 +141,10 @@ func tokensForMessages(msgs []provider.Message) int {
 	return total
 }
 
-// PendingPrune returns messages that would be removed on the next two Appends
-// (user + assistant) if the history limit is reached. Returns nil if no pruning
-// would occur.
+// PendingPrune returns messages that would be removed on the next Appends
+// if the history limit is reached. It predicts up to 3 new messages
+// (document + user + assistant) to cover document interactions.
+// Returns nil if no pruning would occur.
 func (d *DB) PendingPrune(chatID int64, limit int) ([]provider.Message, error) {
 	if limit <= 0 {
 		return nil, nil
@@ -159,8 +160,8 @@ func (d *DB) PendingPrune(chatID int64, limit int) ([]provider.Message, error) {
 
 		count := b.Stats().KeyN
 
-		// Two messages will be appended (user + assistant).
-		toRemove := count + 2 - limit
+		// Up to three messages may be appended (document + user + assistant).
+		toRemove := count + 3 - limit
 		if toRemove <= 0 {
 			return nil
 		}
