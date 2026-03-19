@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ type Loop struct {
 	hub                      *hub.Hub
 	provider                 provider.LLMProvider
 	extProvider              provider.LLMProvider // provider used for memory extraction and summarization
+	imageProvider            provider.ImageProvider
 	store                    *store.DB
 	metrics                  *metrics.Metrics
 	historyLimit             int
@@ -43,12 +45,14 @@ type Loop struct {
 // before pruning. When streaming is true, providers that implement
 // StreamingProvider are used for incremental response delivery. The
 // maxArchived parameter limits how many archived conversations are kept per
-// chat (0 disables pruning, keeping all archives).
-func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget, maxArchived int, summarize, streaming bool, systemPrompt string, m *metrics.Metrics) *Loop {
+// chat (0 disables pruning, keeping all archives). The imgProvider parameter
+// is optional; when non-nil, the LLM is informed about the generate_image tool.
+func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget, maxArchived int, summarize, streaming bool, systemPrompt string, m *metrics.Metrics, imgProvider provider.ImageProvider) *Loop {
 	return &Loop{
 		hub:                      h,
 		provider:                 p,
 		extProvider:              pickExtractionProvider(p),
+		imageProvider:            imgProvider,
 		store:                    s,
 		metrics:                  m,
 		historyLimit:             historyLimit,
@@ -378,7 +382,7 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	l.hub.Typing <- msg.ChatID
 
 	// Build messages and call provider.
-	messages := buildMessages(history, memories, msg.Text, l.systemPrompt, summary)
+	messages := buildMessages(history, memories, msg.Text, l.systemPrompt, summary, l.imageProvider != nil)
 
 	// Inject document context as a system message just before the user message.
 	if msg.Document != nil {
@@ -437,6 +441,14 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		}
 		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
 		return
+	}
+
+	// Check for image generation tool call.
+	if l.imageProvider != nil {
+		if prompt, ok := parseImageToolCall(response); ok {
+			l.handleImageGeneration(ctx, msg, prompt, response)
+			return
+		}
 	}
 
 	l.saveAndRespond(msg, response)
@@ -564,6 +576,54 @@ func (l *Loop) handleStream(ctx context.Context, sp provider.StreamingProvider, 
 	}
 
 	return response, nil
+}
+
+// maxImageSize is the maximum image size Telegram accepts (20 MB).
+const maxImageSize = 20 << 20
+
+// imageToolCallRe matches the XML tool_use block for generate_image.
+var imageToolCallRe = regexp.MustCompile(`(?s)<tool_use>\s*<name>generate_image</name>\s*<parameters>\s*<prompt>(.*?)</prompt>\s*</parameters>\s*</tool_use>`)
+
+// parseImageToolCall checks if the LLM response contains a generate_image
+// tool call and returns the prompt. Returns ("", false) if no tool call found.
+func parseImageToolCall(response string) (string, bool) {
+	matches := imageToolCallRe.FindStringSubmatch(response)
+	if len(matches) < 2 {
+		return "", false
+	}
+	prompt := strings.TrimSpace(matches[1])
+	if prompt == "" {
+		return "", false
+	}
+	return prompt, true
+}
+
+// handleImageGeneration sends a placeholder message, generates an image,
+// and delivers it as a Telegram photo.
+func (l *Loop) handleImageGeneration(ctx context.Context, msg hub.InMessage, prompt, llmResponse string) {
+	slog.Info("image generation requested", slog.Int64("chat_id", msg.ChatID), slog.String("prompt", prompt))
+
+	// Send placeholder.
+	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Generating image..."}
+
+	// Save the tool call as the assistant response in history.
+	l.saveAndProcess(msg, llmResponse)
+
+	// Generate image.
+	imgBytes, err := l.imageProvider.Generate(ctx, prompt)
+	if err != nil {
+		slog.Error("image generation failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to generate image. Please try again."}
+		return
+	}
+
+	if len(imgBytes) > maxImageSize {
+		slog.Error("generated image too large", slog.Int64("chat_id", msg.ChatID), slog.Int("size", len(imgBytes)))
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Generated image is too large for Telegram."}
+		return
+	}
+
+	l.hub.Image <- hub.ImageMessage{ChatID: msg.ChatID, Data: imgBytes}
 }
 
 // isTrivialMessage returns true for messages too short to contain memorable content.

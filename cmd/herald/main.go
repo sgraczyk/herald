@@ -112,11 +112,18 @@ func serve(configPath string) error {
 
 	chain := provider.NewFallback(providers, *cfg.MaxRetries, m)
 
+	// Build image provider.
+	var imgProvider provider.ImageProvider
+	if cfg.ImageProvider != nil && cfg.ImageProvider.Type == "openai" && cfg.ImageProvider.APIKey != "" {
+		imgProvider = provider.NewDallE(cfg.ImageProvider.APIKey)
+		slog.Info("image generation enabled", slog.String("type", "openai"))
+	}
+
 	// Create hub.
 	h := hub.New()
 
 	// Create agent loop.
-	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.HistoryTokenBudget, *cfg.MaxArchivedConversations, cfg.Summarize, cfg.Streaming, cfg.SystemPrompt, m)
+	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.HistoryTokenBudget, *cfg.MaxArchivedConversations, cfg.Summarize, cfg.Streaming, cfg.SystemPrompt, m, imgProvider)
 
 	// Create Telegram adapter.
 	tg, err := telegram.New(cfg.Telegram.Token, h, cfg.AllowedUserIDs, document.NewPDFExtractor(cfg.MaxDocumentTokens))

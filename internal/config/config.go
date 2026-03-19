@@ -10,20 +10,21 @@ import (
 
 // Config holds all runtime configuration for Herald.
 type Config struct {
-	Telegram           TelegramConfig   `json:"telegram"`
-	Providers          []ProviderConfig `json:"providers"`
-	Store              StoreConfig      `json:"store"`
-	HTTPPort           int              `json:"http_port,omitempty"`
-	HistoryLimit       int              `json:"history_limit"`
-	HistoryTokenBudget int              `json:"history_token_budget,omitempty"`
-	MaxDocumentTokens  int              `json:"max_document_tokens,omitempty"`
+	Telegram           TelegramConfig      `json:"telegram"`
+	Providers          []ProviderConfig    `json:"providers"`
+	ImageProvider      *ImageProviderConfig `json:"image_provider,omitempty"`
+	Store              StoreConfig          `json:"store"`
+	HTTPPort           int                  `json:"http_port,omitempty"`
+	HistoryLimit       int                  `json:"history_limit"`
+	HistoryTokenBudget int                  `json:"history_token_budget,omitempty"`
+	MaxDocumentTokens  int                  `json:"max_document_tokens,omitempty"`
 	MaxRetries               *int `json:"max_retries,omitempty"`
 	MaxArchivedConversations *int `json:"max_archived_conversations,omitempty"`
-	LogLevel           string           `json:"log_level"`
-	Summarize          bool             `json:"summarize,omitempty"`
-	Streaming          bool             `json:"streaming,omitempty"`
-	SystemPrompt       string           `json:"system_prompt,omitempty"`
-	AllowedUserIDs     []int64          `json:"-"`
+	LogLevel           string               `json:"log_level"`
+	Summarize          bool                 `json:"summarize,omitempty"`
+	Streaming          bool                 `json:"streaming,omitempty"`
+	SystemPrompt       string               `json:"system_prompt,omitempty"`
+	AllowedUserIDs     []int64              `json:"-"`
 
 	// Raw field for env var resolution.
 	AllowedUserIDsEnv string `json:"allowed_user_ids_env"`
@@ -41,6 +42,13 @@ type ProviderConfig struct {
 	Type      string `json:"type"` // "claude-cli" or "openai"
 	BaseURL   string `json:"base_url,omitempty"`
 	Model     string `json:"model,omitempty"`
+	APIKeyEnv string `json:"api_key_env,omitempty"`
+	APIKey    string `json:"-"`
+}
+
+// ImageProviderConfig describes the image generation provider.
+type ImageProviderConfig struct {
+	Type      string `json:"type"`        // "openai" or "none"
 	APIKeyEnv string `json:"api_key_env,omitempty"`
 	APIKey    string `json:"-"`
 }
@@ -111,6 +119,10 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 		if cfg.Providers[i].APIKeyEnv != "" {
 			cfg.Providers[i].APIKey = os.Getenv(cfg.Providers[i].APIKeyEnv)
 		}
+	}
+
+	if cfg.ImageProvider != nil && cfg.ImageProvider.APIKeyEnv != "" {
+		cfg.ImageProvider.APIKey = os.Getenv(cfg.ImageProvider.APIKeyEnv)
 	}
 
 	if cfg.LogLevel == "" {

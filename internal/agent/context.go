@@ -16,6 +16,26 @@ Formatting rules for Telegram:
 - Use bold, italic, and code blocks for emphasis.
 - Keep messages concise — users read on mobile.`
 
+const imageToolPrompt = `
+
+You have access to the following tool:
+
+<tool>
+<name>generate_image</name>
+<description>Generate an image from a text description. Use this when the user asks you to draw, create, generate, or make an image or picture.</description>
+<parameters>
+<parameter name="prompt" type="string" required="true">A detailed description of the image to generate.</parameter>
+</parameters>
+</tool>
+
+When you want to generate an image, respond with ONLY this XML block and nothing else:
+<tool_use>
+<name>generate_image</name>
+<parameters>
+<prompt>your detailed image prompt here</prompt>
+</parameters>
+</tool_use>`
+
 // maxContextMemories limits how many memories are injected into the system
 // prompt. All explicit memories are always included; remaining slots are
 // filled with the most recent auto-extracted memories.
@@ -23,13 +43,17 @@ const maxContextMemories = 50
 
 // buildMessages assembles the full message list for the provider:
 // system prompt (with summary and memories) + conversation history + current user message.
-func buildMessages(history []provider.Message, memories []store.Memory, userText, customPrompt, summary string) []provider.Message {
+// If hasImageGen is true, the generate_image tool definition is appended to the system prompt.
+func buildMessages(history []provider.Message, memories []store.Memory, userText, customPrompt, summary string, hasImageGen bool) []provider.Message {
 	msgs := make([]provider.Message, 0, len(history)+2)
 
 	selected := selectMemories(memories)
 	prompt := defaultSystemPrompt
 	if customPrompt != "" {
 		prompt = customPrompt
+	}
+	if hasImageGen {
+		prompt += imageToolPrompt
 	}
 	if summary != "" {
 		prompt += "\n\nSummary of earlier conversation:\n" + summary

@@ -15,6 +15,10 @@
       "api_key_env": "CHUTES_API_KEY"
     }
   ],
+  "image_provider": {
+    "type": "none",
+    "api_key_env": "OPENAI_API_KEY"
+  },
   "store": {
     "path": "herald.db"
   },
