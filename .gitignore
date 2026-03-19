@@ -24,6 +24,9 @@ Thumbs.db
 # Claude Spec First
 .claude/.csf/
 
+# Superpowers (specs, plans)
+docs/superpowers/
+
 # Playwright
 .playwright-mcp/
 .claude/.sf/
