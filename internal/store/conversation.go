@@ -99,6 +99,68 @@ func (d *DB) ArchiveConversation(chatID int64) (bool, error) {
 	return archived, err
 }
 
+// PruneArchived removes the oldest archived conversations for a chat so that
+// the total count does not exceed limit. Each deletion uses the same
+// transaction for efficiency but operates on individual keys for safety.
+func (d *DB) PruneArchived(chatID int64, limit int) error {
+	if limit <= 0 {
+		return nil
+	}
+
+	return d.bolt.Update(func(tx *bolt.Tx) error {
+		archives := tx.Bucket(archivesBucket)
+		if archives == nil {
+			return nil
+		}
+		chatArchives := archives.Bucket(chatBucketKey(chatID))
+		if chatArchives == nil {
+			return nil
+		}
+
+		// Count entries.
+		count := 0
+		c := chatArchives.Cursor()
+		for k, _ := c.First(); k != nil; k, _ = c.Next() {
+			count++
+		}
+
+		toDelete := count - limit
+		if toDelete <= 0 {
+			return nil
+		}
+
+		// Collect oldest keys.
+		keys := make([][]byte, 0, toDelete)
+		for k, _ := c.First(); k != nil && len(keys) < toDelete; k, _ = c.Next() {
+			cp := make([]byte, len(k))
+			copy(cp, k)
+			keys = append(keys, cp)
+		}
+
+		for _, k := range keys {
+			if err := chatArchives.Delete(k); err != nil {
+				return fmt.Errorf("delete old archive: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+// ClearArchived removes all archived conversations for a chat.
+func (d *DB) ClearArchived(chatID int64) error {
+	return d.bolt.Update(func(tx *bolt.Tx) error {
+		archives := tx.Bucket(archivesBucket)
+		if archives == nil {
+			return nil
+		}
+		key := chatBucketKey(chatID)
+		if archives.Bucket(key) == nil {
+			return nil
+		}
+		return archives.DeleteBucket(key)
+	})
+}
+
 // ListArchived returns all archived conversations for a chat, ordered by time.
 func (d *DB) ListArchived(chatID int64) ([]ArchivedConversation, error) {
 	var convs []ArchivedConversation

@@ -36,7 +36,7 @@ func testLoop(t *testing.T, p provider.LLMProvider) (*Loop, *hub.Hub, *store.DB)
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	l := NewLoop(h, p, db, 50, 8000, false, false, "", nil)
+	l := NewLoop(h, p, db, 50, 8000, 0, false, false, "", nil)
 	return l, h, db
 }
 
@@ -690,7 +690,7 @@ func TestSummarizationBeforePrune(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	// Create loop with summarize=true and limit=4.
-	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, true, false, "", nil)
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil)
 
 	// Fill history to limit: 4 messages.
 	for i := 0; i < 4; i++ {
@@ -726,7 +726,7 @@ func TestSummarizationFailureDoesNotBreakFlow(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, true, false, "", nil)
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil)
 
 	// Fill history to limit.
 	for i := 0; i < 4; i++ {
@@ -761,7 +761,7 @@ func TestSummaryInContext(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	l := NewLoop(h, cap, db, 50, 8000, true, false, "", nil)
+	l := NewLoop(h, cap, db, 50, 8000, 0, true, false, "", nil)
 	l.extProvider = cap
 
 	// Store a summary.
@@ -967,7 +967,7 @@ func TestSummarizationCompactsDocumentText(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	// Create loop with summarize=true and limit=4.
-	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, true, false, "", nil)
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil)
 
 	// Fill history: a document system message + 3 regular messages = 4 total.
 	longDocText := "--- Document: invoice.pdf (2 pages) ---\n" + strings.Repeat("Invoice line item. ", 500) + "\n--- End of document ---"
@@ -994,5 +994,123 @@ func TestSummarizationCompactsDocumentText(t *testing.T) {
 		if strings.Contains(m.Content, "Invoice line item.") {
 			t.Error("summarization call should not contain full document text, expected compacted header only")
 		}
+	}
+}
+
+func TestParseFactsJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    []string
+		wantErr bool
+	}{
+		{
+			name:  "valid array",
+			input: `["prefers Go", "lives in Warsaw"]`,
+			want:  []string{"prefers Go", "lives in Warsaw"},
+		},
+		{
+			name:  "empty array",
+			input: `[]`,
+			want:  []string{},
+		},
+		{
+			name:    "malformed JSON",
+			input:   `["broken`,
+			wantErr: true,
+		},
+		{
+			name:    "non-array JSON object",
+			input:   `{"key": "value"}`,
+			wantErr: true,
+		},
+		{
+			name:  "JSON with surrounding text",
+			input: "Here are the facts:\n```json\n[\"prefers Go\"]\n```\nDone.",
+			want:  []string{"prefers Go"},
+		},
+		{
+			name:    "no array at all",
+			input:   "No facts found.",
+			wantErr: true,
+		},
+		{
+			name:    "array of non-strings",
+			input:   `[1, 2, 3]`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseFactsJSON(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got %v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("expected %d facts, got %d", len(tt.want), len(got))
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("fact[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestConversationsClearCommand(t *testing.T) {
+	mock := &mockProvider{name: "test"}
+	l, h, db := testLoop(t, mock)
+
+	// Archive a conversation.
+	_ = db.Append(1, provider.Message{Role: "user", Content: "hello"}, 50)
+	_, _ = db.ArchiveConversation(1)
+
+	convs, _ := db.ListArchived(1)
+	if len(convs) != 1 {
+		t.Fatalf("expected 1 archive, got %d", len(convs))
+	}
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Command: "/conversations", Text: "clear"})
+
+	out := readOut(t, h)
+	if out.Text != "All archived conversations cleared." {
+		t.Errorf("expected clear confirmation, got %q", out.Text)
+	}
+
+	convs, _ = db.ListArchived(1)
+	if len(convs) != 0 {
+		t.Errorf("expected 0 archives after clear, got %d", len(convs))
+	}
+}
+
+func TestArchivePrunesOldConversations(t *testing.T) {
+	h := hub.New()
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	// Create loop with maxArchived=2.
+	l := NewLoop(h, &mockProvider{name: "test", response: "ok"}, db, 50, 8000, 2, false, false, "", nil)
+
+	// Archive 3 conversations via handleNew.
+	for i := 0; i < 3; i++ {
+		_ = db.Append(1, provider.Message{Role: "user", Content: fmt.Sprintf("conv-%d", i)}, 50)
+		l.handle(context.Background(), hub.InMessage{ChatID: 1, Command: "/new"})
+		readOut(t, h)
+	}
+
+	convs, _ := db.ListArchived(1)
+	if len(convs) != 2 {
+		t.Errorf("expected 2 archives after pruning (limit=2), got %d", len(convs))
 	}
 }

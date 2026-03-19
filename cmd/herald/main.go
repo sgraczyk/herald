@@ -116,7 +116,7 @@ func serve(configPath string) error {
 	h := hub.New()
 
 	// Create agent loop.
-	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.HistoryTokenBudget, cfg.Summarize, cfg.Streaming, cfg.SystemPrompt, m)
+	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.HistoryTokenBudget, cfg.MaxArchivedConversations, cfg.Summarize, cfg.Streaming, cfg.SystemPrompt, m)
 
 	// Create Telegram adapter.
 	tg, err := telegram.New(cfg.Telegram.Token, h, cfg.AllowedUserIDs, document.NewPDFExtractor(cfg.MaxDocumentTokens))

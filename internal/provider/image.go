@@ -7,7 +7,9 @@ import (
 	"image"
 	"image/jpeg"
 	_ "image/png"
+	"log/slog"
 
+	"github.com/rwcarlsen/goexif/exif"
 	"golang.org/x/image/draw"
 )
 
@@ -31,6 +33,11 @@ func PreprocessImage(data []byte, mimeType string) (ImageData, error) {
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return ImageData{}, fmt.Errorf("decode image: %w", err)
+	}
+
+	// Apply EXIF orientation correction for JPEG images before resize.
+	if mimeType == "image/jpeg" {
+		img = applyEXIFOrientation(data, img)
 	}
 
 	bounds := img.Bounds()
@@ -69,3 +76,115 @@ func resizeImage(img image.Image, w, h int) image.Image {
 	draw.CatmullRom.Scale(dst, dst.Bounds(), img, img.Bounds(), draw.Over, nil)
 	return dst
 }
+
+// applyEXIFOrientation reads the EXIF orientation tag from raw JPEG data and
+// transforms the decoded image accordingly. If the EXIF data cannot be read
+// or has no orientation tag, the image is returned unchanged.
+func applyEXIFOrientation(rawJPEG []byte, img image.Image) image.Image {
+	x, err := exif.Decode(bytes.NewReader(rawJPEG))
+	if err != nil {
+		slog.Debug("exif decode failed, skipping orientation", slog.String("error", err.Error()))
+		return img
+	}
+
+	tag, err := x.Get(exif.Orientation)
+	if err != nil {
+		return img // no orientation tag
+	}
+
+	orient, err := tag.Int(0)
+	if err != nil {
+		return img
+	}
+
+	return orientImage(img, orient)
+}
+
+// orientImage applies one of the 8 EXIF orientation transforms.
+//
+//	1: normal
+//	2: flip horizontal
+//	3: rotate 180
+//	4: flip vertical
+//	5: transpose (flip horizontal + rotate 270 CW)
+//	6: rotate 90 CW
+//	7: transverse (flip horizontal + rotate 90 CW)
+//	8: rotate 270 CW
+func orientImage(img image.Image, orient int) image.Image {
+	switch orient {
+	case 1:
+		return img
+	case 2:
+		return flipH(img)
+	case 3:
+		return rotate180(img)
+	case 4:
+		return flipV(img)
+	case 5:
+		return flipH(rotate270(img))
+	case 6:
+		return rotate90(img)
+	case 7:
+		return flipH(rotate90(img))
+	case 8:
+		return rotate270(img)
+	default:
+		return img
+	}
+}
+
+func rotate90(img image.Image) image.Image {
+	b := img.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, b.Dy(), b.Dx()))
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			dst.Set(b.Max.Y-1-y, x, img.At(x, y))
+		}
+	}
+	return dst
+}
+
+func rotate180(img image.Image) image.Image {
+	b := img.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			dst.Set(b.Max.X-1-x, b.Max.Y-1-y, img.At(x, y))
+		}
+	}
+	return dst
+}
+
+func rotate270(img image.Image) image.Image {
+	b := img.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, b.Dy(), b.Dx()))
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			dst.Set(y, b.Max.X-1-x, img.At(x, y))
+		}
+	}
+	return dst
+}
+
+func flipH(img image.Image) image.Image {
+	b := img.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			dst.Set(b.Max.X-1-x, y, img.At(x, y))
+		}
+	}
+	return dst
+}
+
+func flipV(img image.Image) image.Image {
+	b := img.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			dst.Set(x, b.Max.Y-1-y, img.At(x, y))
+		}
+	}
+	return dst
+}
+
