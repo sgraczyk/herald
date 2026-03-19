@@ -50,6 +50,7 @@ A vision-capable OpenAI-compatible provider must be configured (e.g., a model wi
 - **Images are not saved.** Only a `[image] <caption>` placeholder is stored in history. Send the photo again for follow-up questions.
 - **Large images are resized.** Images over 2000px are scaled down automatically.
 - **WEBP passthrough.** WEBP images are not resized (no Go stdlib decoder without CGO) but are still subject to the 4 MB size cap.
+- **EXIF orientation corrected.** JPEG images are automatically rotated according to their EXIF orientation tag before being sent to the LLM.
 - **Single image per message.** Telegram sends one photo per message.
 
 ## PDF Document Support
@@ -138,6 +139,8 @@ Use `/conversations` to see your archived conversations. Each entry shows the ti
 
 `/clear` still works as before -- it deletes history without archiving.
 
+Archives are capped at 50 per chat by default (configurable via `max_archived_conversations`). When the limit is exceeded, the oldest archives are deleted automatically on `/new`. Use `/conversations clear` to delete all archived conversations for the current chat.
+
 ## Custom Personality
 
 You can change how Herald talks by setting `system_prompt` in `config.json`. No rebuilding needed -- edit and restart.
@@ -178,7 +181,7 @@ Herald logs a warning at startup if the prompt exceeds 4000 characters. It still
 | `/forget` | Remove a specific memory |
 | `/memories` | List all stored memories |
 | `/new` | Archive current conversation and start fresh (memories are kept) |
-| `/conversations` | List past archived conversations |
+| `/conversations` | List past archived conversations (`/conversations clear` to delete all) |
 
 ### Unrecognized Commands
 
