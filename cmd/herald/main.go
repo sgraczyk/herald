@@ -14,6 +14,7 @@ import (
 	"github.com/sgraczyk/herald"
 	"github.com/sgraczyk/herald/internal/agent"
 	"github.com/sgraczyk/herald/internal/config"
+	"github.com/sgraczyk/herald/internal/document"
 	"github.com/sgraczyk/herald/internal/health"
 	"github.com/sgraczyk/herald/internal/hub"
 	"github.com/sgraczyk/herald/internal/metrics"
@@ -118,7 +119,7 @@ func serve(configPath string) error {
 	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.HistoryTokenBudget, cfg.Summarize, cfg.Streaming, cfg.SystemPrompt, m)
 
 	// Create Telegram adapter.
-	tg, err := telegram.New(cfg.Telegram.Token, h, cfg.AllowedUserIDs)
+	tg, err := telegram.New(cfg.Telegram.Token, h, cfg.AllowedUserIDs, document.NewPDFExtractor(cfg.MaxDocumentTokens))
 	if err != nil {
 		return fmt.Errorf("create telegram adapter: %w", err)
 	}

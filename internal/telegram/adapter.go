@@ -2,7 +2,9 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/sgraczyk/herald/internal/document"
 	"github.com/sgraczyk/herald/internal/format"
 	"github.com/sgraczyk/herald/internal/hub"
 	"github.com/sgraczyk/herald/internal/provider"
@@ -37,6 +40,7 @@ type Adapter struct {
 	bot        *bot.Bot
 	hub        *hub.Hub
 	allowedIDs map[int64]bool
+	extractor  document.Extractor
 
 	mu         sync.Mutex
 	typing     map[int64]context.CancelFunc // active typing indicators per chat
@@ -45,10 +49,11 @@ type Adapter struct {
 
 // New creates a new Telegram adapter.
 // It returns an error if allowedUserIDs is empty, enforcing fail-closed access control.
-func New(token string, h *hub.Hub, allowedUserIDs []int64) (*Adapter, error) {
+func New(token string, h *hub.Hub, allowedUserIDs []int64, ext document.Extractor) (*Adapter, error) {
 	a := &Adapter{
 		hub:        h,
 		allowedIDs: make(map[int64]bool, len(allowedUserIDs)),
+		extractor:  ext,
 		typing:     make(map[int64]context.CancelFunc),
 		streamMsgs: make(map[int64]int),
 	}
@@ -108,6 +113,12 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 	// Handle photo messages.
 	if len(msg.Photo) > 0 {
 		a.handlePhoto(ctx, b, msg, chatID, userID)
+		return
+	}
+
+	// Handle document messages (PDF).
+	if msg.Document != nil && msg.Document.MimeType == "application/pdf" {
+		a.handleDocument(ctx, b, msg, chatID, userID)
 		return
 	}
 
@@ -187,6 +198,90 @@ func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Messa
 		Images: []hub.ImageAttachment{
 			{Base64: imgData.Base64, MimeType: imgData.MimeType},
 		},
+	}
+}
+
+const maxDocumentSize = 10 << 20 // 10 MB
+
+func (a *Adapter) handleDocument(ctx context.Context, b *bot.Bot, msg *models.Message, chatID, userID int64) {
+	if msg.Document.FileSize > maxDocumentSize {
+		a.sendError(ctx, chatID, "PDF too large (max 10 MB).")
+		return
+	}
+
+	file, err := b.GetFile(ctx, &bot.GetFileParams{FileID: msg.Document.FileID})
+	if err != nil {
+		slog.Error("get document file failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+		a.sendError(ctx, chatID, "Failed to download the file.")
+		return
+	}
+
+	fileURL := a.bot.FileDownloadLink(file)
+	dlCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(dlCtx, http.MethodGet, fileURL, nil)
+	if err != nil {
+		slog.Error("create document download request failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+		a.sendError(ctx, chatID, "Failed to download the file.")
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Error("download document failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+		a.sendError(ctx, chatID, "Failed to download the file.")
+		return
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxDocumentSize))
+	if err != nil {
+		slog.Error("read document data failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+		a.sendError(ctx, chatID, "Failed to download the file.")
+		return
+	}
+
+	r := bytes.NewReader(data)
+	doc, err := a.extractor.Extract(r, int64(len(data)), msg.Document.FileName)
+	if err != nil {
+		slog.Warn("document extraction failed",
+			slog.Int64("chat_id", chatID),
+			slog.String("file", msg.Document.FileName),
+			slog.String("error", err.Error()),
+		)
+		a.sendError(ctx, chatID, documentErrorMessage(err))
+		return
+	}
+
+	text := strings.TrimSpace(msg.Caption)
+	if text == "" {
+		text = "What's in this document?"
+	}
+
+	if a.hub.Draining() {
+		slog.Debug("dropping document message, hub is draining", slog.Int64("chat_id", chatID))
+		return
+	}
+
+	a.hub.In <- hub.InMessage{
+		ChatID:   chatID,
+		UserID:   userID,
+		Text:     text,
+		Document: doc,
+	}
+}
+
+func documentErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, document.ErrEncrypted):
+		return "Sorry, I can't read encrypted PDFs."
+	case errors.Is(err, document.ErrNoText), errors.Is(err, document.ErrGarbled):
+		return "This PDF appears to be scanned/image-based. Text extraction isn't supported yet."
+	case errors.Is(err, document.ErrMalformed):
+		return "Couldn't process this PDF. The file may be corrupted."
+	default:
+		return "Couldn't process this PDF. Try a different file."
 	}
 }
 

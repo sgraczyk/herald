@@ -12,7 +12,7 @@ import (
 
 func TestNewEmptyAllowedIDs(t *testing.T) {
 	h := hub.New()
-	_, err := New("test-token", h, nil)
+	_, err := New("test-token", h, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for nil allowedUserIDs, got nil")
 	}
@@ -20,7 +20,7 @@ func TestNewEmptyAllowedIDs(t *testing.T) {
 
 func TestNewEmptySliceAllowedIDs(t *testing.T) {
 	h := hub.New()
-	_, err := New("test-token", h, []int64{})
+	_, err := New("test-token", h, []int64{}, nil)
 	if err == nil {
 		t.Fatal("expected error for empty allowedUserIDs, got nil")
 	}
@@ -28,7 +28,7 @@ func TestNewEmptySliceAllowedIDs(t *testing.T) {
 
 func TestNewZeroOnlyAllowedIDs(t *testing.T) {
 	h := hub.New()
-	_, err := New("test-token", h, []int64{0, 0})
+	_, err := New("test-token", h, []int64{0, 0}, nil)
 	if err == nil {
 		t.Fatal("expected error when all IDs are zero, got nil")
 	}
@@ -38,7 +38,7 @@ func TestNewZeroFilteredFromAllowedIDs(t *testing.T) {
 	h := hub.New()
 	// This will fail at bot.New because "test-token" is not a real token,
 	// but it should NOT fail with the "no valid allowed user IDs" error.
-	_, err := New("test-token", h, []int64{0, 12345})
+	_, err := New("test-token", h, []int64{0, 12345}, nil)
 	if err == nil {
 		return // bot.New succeeded (unlikely with fake token, but acceptable)
 	}
@@ -49,7 +49,7 @@ func TestNewZeroFilteredFromAllowedIDs(t *testing.T) {
 
 func TestNewNegativeIDsFiltered(t *testing.T) {
 	h := hub.New()
-	_, err := New("test-token", h, []int64{-1, -999})
+	_, err := New("test-token", h, []int64{-1, -999}, nil)
 	if err == nil {
 		t.Fatal("expected error when all IDs are negative, got nil")
 	}
