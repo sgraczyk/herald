@@ -355,6 +355,16 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	// Build messages and call provider.
 	messages := buildMessages(history, memories, msg.Text, l.systemPrompt, summary)
 
+	// Inject document context as a system message just before the user message.
+	if msg.Document != nil {
+		docMsg := provider.Message{
+			Role:    "system",
+			Content: document.FormatContext(msg.Document),
+		}
+		// Insert before the last element (the current user message).
+		messages = append(messages[:len(messages)-1], append([]provider.Message{docMsg}, messages[len(messages)-1])...)
+	}
+
 	// Attach images to the current user message (last in the list).
 	if len(msg.Images) > 0 {
 		last := &messages[len(messages)-1]
