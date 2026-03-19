@@ -333,19 +333,22 @@ func TestPendingPruneOverLimit(t *testing.T) {
 		}
 	}
 
-	// Limit 5, count 5, 5+2-5=2 messages would be pruned.
+	// Limit 5, count 5, 5+3-5=3 messages would be pruned.
 	pending, err := db.PendingPrune(1, 5)
 	if err != nil {
 		t.Fatalf("pending prune: %v", err)
 	}
-	if len(pending) != 2 {
-		t.Fatalf("expected 2 pending prune messages, got %d", len(pending))
+	if len(pending) != 3 {
+		t.Fatalf("expected 3 pending prune messages, got %d", len(pending))
 	}
 	if pending[0].Content != "msg-0" {
 		t.Errorf("expected oldest message first, got %q", pending[0].Content)
 	}
 	if pending[1].Content != "msg-1" {
 		t.Errorf("expected second oldest message, got %q", pending[1].Content)
+	}
+	if pending[2].Content != "msg-2" {
+		t.Errorf("expected third oldest message, got %q", pending[2].Content)
 	}
 }
 

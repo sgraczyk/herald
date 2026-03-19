@@ -2,11 +2,7 @@
 // adapter and the agent loop.
 package hub
 
-import (
-	"sync/atomic"
-
-	"github.com/sgraczyk/herald/internal/document"
-)
+import "sync/atomic"
 
 // ImageAttachment holds a base64-encoded image from Telegram.
 type ImageAttachment struct {
@@ -14,14 +10,24 @@ type ImageAttachment struct {
 	MimeType string
 }
 
+// DocumentAttachment holds extracted text from a file sent via Telegram.
+type DocumentAttachment struct {
+	Name       string // original filename
+	MimeType   string // e.g. "application/pdf"
+	Pages      int    // total page count
+	Text       string // extracted text (may be truncated)
+	Truncated  bool   // true if text was cut to fit token budget
+	ShownPages int    // how many pages fit within budget
+}
+
 // InMessage represents an incoming message to be processed.
 type InMessage struct {
-	ChatID  int64
-	UserID  int64
-	Text    string
-	Command string           // e.g. "/clear", "/model", "/status" (empty for regular messages)
-	Images   []ImageAttachment  // optional image attachments
-	Document *document.Document // optional document attachment
+	ChatID   int64
+	UserID   int64
+	Text     string
+	Command  string               // e.g. "/clear", "/model", "/status" (empty for regular messages)
+	Images   []ImageAttachment    // optional image attachments
+	Document *DocumentAttachment  // optional document attachment
 }
 
 // OutMessage represents an outgoing response to be sent.

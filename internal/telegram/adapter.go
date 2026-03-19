@@ -265,10 +265,17 @@ func (a *Adapter) handleDocument(ctx context.Context, b *bot.Bot, msg *models.Me
 	}
 
 	a.hub.In <- hub.InMessage{
-		ChatID:   chatID,
-		UserID:   userID,
-		Text:     text,
-		Document: doc,
+		ChatID: chatID,
+		UserID: userID,
+		Text:   text,
+		Document: &hub.DocumentAttachment{
+			Name:       doc.Name,
+			MimeType:   doc.MimeType,
+			Pages:      doc.Pages,
+			Text:       doc.Text,
+			Truncated:  doc.Truncated,
+			ShownPages: doc.ShownPages,
+		},
 	}
 }
 

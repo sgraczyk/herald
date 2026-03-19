@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sgraczyk/herald/internal/document"
 	"github.com/sgraczyk/herald/internal/hub"
 	"github.com/sgraczyk/herald/internal/provider"
 	"github.com/sgraczyk/herald/internal/store"
@@ -798,6 +797,34 @@ func TestBuildMessagesWithSummary(t *testing.T) {
 	}
 }
 
+func TestFormatDocumentContext(t *testing.T) {
+	doc := &hub.DocumentAttachment{
+		Name:       "invoice.pdf",
+		Pages:      3,
+		Text:       "Some invoice text",
+		Truncated:  false,
+		ShownPages: 3,
+	}
+	got := formatDocumentContext(doc)
+	if !strings.Contains(got, "--- Document: invoice.pdf (3 pages) ---") {
+		t.Errorf("expected non-truncated header, got %q", got)
+	}
+	if !strings.Contains(got, "--- End of document ---") {
+		t.Errorf("expected end marker, got %q", got)
+	}
+
+	doc.Truncated = true
+	doc.Pages = 5
+	doc.ShownPages = 3
+	got = formatDocumentContext(doc)
+	if !strings.Contains(got, "(3/5 pages shown)") {
+		t.Errorf("expected truncated header, got %q", got)
+	}
+	if !strings.Contains(got, "2 pages omitted") {
+		t.Errorf("expected omitted note, got %q", got)
+	}
+}
+
 // errorOnNthProvider returns an error on a specific call index.
 // The counter is atomic to support concurrent goroutines.
 type errorOnNthProvider struct {
@@ -824,7 +851,7 @@ func TestHandleMessageWithDocument(t *testing.T) {
 	l, h, db := testLoop(t, cap)
 	l.extProvider = cap
 
-	doc := &document.Document{
+	doc := &hub.DocumentAttachment{
 		Name:       "invoice.pdf",
 		MimeType:   "application/pdf",
 		Pages:      2,
@@ -890,7 +917,7 @@ func TestDocumentPersistsForFollowUp(t *testing.T) {
 	l, h, _ := testLoop(t, cap)
 	l.extProvider = cap
 
-	doc := &document.Document{
+	doc := &hub.DocumentAttachment{
 		Name:       "invoice.pdf",
 		MimeType:   "application/pdf",
 		Pages:      1,

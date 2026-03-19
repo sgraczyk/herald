@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sgraczyk/herald/internal/document"
 	"github.com/sgraczyk/herald/internal/hub"
 	"github.com/sgraczyk/herald/internal/metrics"
 	"github.com/sgraczyk/herald/internal/provider"
@@ -359,7 +358,7 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	if msg.Document != nil {
 		docMsg := provider.Message{
 			Role:    "system",
-			Content: document.FormatContext(msg.Document),
+			Content: formatDocumentContext(msg.Document),
 		}
 		// Insert before the last element (the current user message).
 		messages = append(messages[:len(messages)-1], append([]provider.Message{docMsg}, messages[len(messages)-1])...)
@@ -433,7 +432,7 @@ func (l *Loop) saveAndProcess(msg hub.InMessage, response string) {
 	if msg.Document != nil {
 		docMsg := provider.Message{
 			Role:      "system",
-			Content:   document.FormatContext(msg.Document),
+			Content:   formatDocumentContext(msg.Document),
 			Timestamp: time.Now(),
 		}
 		if err := l.store.Append(msg.ChatID, docMsg, l.historyLimit); err != nil {
@@ -545,6 +544,21 @@ func (l *Loop) handleStream(ctx context.Context, sp provider.StreamingProvider, 
 func isTrivialMessage(text string) bool {
 	text = strings.TrimSpace(text)
 	return len(text) < 10 || !strings.Contains(text, " ")
+}
+
+// formatDocumentContext formats a document attachment for injection into
+// conversation context as a system message.
+func formatDocumentContext(doc *hub.DocumentAttachment) string {
+	var header, footer string
+	if doc.Truncated {
+		header = fmt.Sprintf("--- Document: %s (%d/%d pages shown) ---", doc.Name, doc.ShownPages, doc.Pages)
+		omitted := doc.Pages - doc.ShownPages
+		footer = fmt.Sprintf("--- End of document (%d pages omitted due to length) ---", omitted)
+	} else {
+		header = fmt.Sprintf("--- Document: %s (%d pages) ---", doc.Name, doc.Pages)
+		footer = "--- End of document ---"
+	}
+	return header + "\n" + doc.Text + "\n" + footer
 }
 
 const extractionPrompt = `Extract notable facts, preferences, or personal details about the user from this exchange. Return ONLY a JSON array of short factual strings, or an empty array [] if nothing is worth remembering.

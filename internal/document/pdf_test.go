@@ -114,34 +114,6 @@ func TestTextDensity(t *testing.T) {
 	}
 }
 
-func TestFormatContext(t *testing.T) {
-	doc := &Document{
-		Name:       "invoice.pdf",
-		Pages:      3,
-		Text:       "Some invoice text",
-		Truncated:  false,
-		ShownPages: 3,
-	}
-	got := FormatContext(doc)
-	if !strings.Contains(got, "--- Document: invoice.pdf (3 pages) ---") {
-		t.Errorf("expected non-truncated header, got %q", got)
-	}
-	if !strings.Contains(got, "--- End of document ---") {
-		t.Errorf("expected end marker, got %q", got)
-	}
-
-	doc.Truncated = true
-	doc.Pages = 5
-	doc.ShownPages = 3
-	got = FormatContext(doc)
-	if !strings.Contains(got, "(3/5 pages shown)") {
-		t.Errorf("expected truncated header, got %q", got)
-	}
-	if !strings.Contains(got, "2 pages omitted") {
-		t.Errorf("expected omitted note, got %q", got)
-	}
-}
-
 // minimalPDF creates a minimal valid PDF with the given text on one page.
 func minimalPDF(text string) []byte {
 	var b bytes.Buffer
