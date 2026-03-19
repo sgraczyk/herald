@@ -53,6 +53,45 @@ A vision-capable OpenAI-compatible provider must be configured (e.g., a model wi
 - **EXIF orientation corrected.** JPEG images are automatically rotated according to their EXIF orientation tag before being sent to the LLM.
 - **Single image per message.** Telegram sends one photo per message.
 
+## Image Generation
+
+Ask Herald to draw or create an image. The LLM interprets your request and generates an image using DALL-E 3. No commands needed -- the LLM decides when image generation is appropriate.
+
+**Examples:**
+
+- "Draw a cat sitting on a keyboard"
+- "Create an image of a sunset over mountains"
+- "Generate a logo for a coffee shop"
+
+Herald sends a placeholder message while generating, then delivers the photo directly in chat. Follow-up requests work -- the conversation retains context about what was generated.
+
+### Requirements
+
+An OpenAI API key is required. Add the `image_provider` section to `config.json`:
+
+```json
+{
+  "image_provider": {
+    "type": "openai",
+    "api_key_env": "OPENAI_API_KEY"
+  }
+}
+```
+
+Set the corresponding environment variable in `.env`. Without this configuration, image generation is unavailable and the LLM will not attempt it.
+
+### Streaming Behavior
+
+With streaming enabled, if the LLM decides to generate an image mid-stream, Herald deletes the partial streamed message and proceeds with image generation. The user sees the placeholder followed by the image.
+
+### Limitations
+
+- **DALL-E 3 only.** No other image providers are supported.
+- **Fixed size.** All generated images are 1024x1024.
+- **20 MB upload limit.** Images exceeding Telegram's limit are rejected.
+- **60-second timeout.** Image generation requests time out after 60 seconds.
+- **Paid API.** Image generation incurs costs on your OpenAI account.
+
 ## PDF Document Support
 
 Send a PDF file to Herald in Telegram. No commands needed -- Herald automatically extracts the text and responds.
