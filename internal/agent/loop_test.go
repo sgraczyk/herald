@@ -1289,3 +1289,80 @@ func TestArchivePrunesOldConversations(t *testing.T) {
 		t.Errorf("expected 2 archives after pruning (limit=2), got %d", len(convs))
 	}
 }
+
+// mockStreamingProvider implements both LLMProvider and StreamingProvider.
+type mockStreamingProvider struct {
+	mockProvider
+}
+
+func (m *mockStreamingProvider) ChatStream(_ context.Context, _ []provider.Message, fn func(string)) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	// Simulate streaming by sending the response in chunks.
+	for _, ch := range m.response {
+		fn(string(ch))
+	}
+	return m.response, nil
+}
+
+func TestStreamingImageToolCallDeletesStreamedMessage(t *testing.T) {
+	imgData := []byte("fake-png-data")
+	imgProvider := &mockImageProvider{data: imgData}
+	h := hub.New()
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	toolResponse := `<tool_use>
+<name>generate_image</name>
+<parameters>
+<prompt>a cute cat</prompt>
+</parameters>
+</tool_use>`
+
+	sp := &mockStreamingProvider{mockProvider{name: "test", response: toolResponse}}
+	fb := provider.NewFallback([]provider.LLMProvider{sp}, 1, nil)
+	l := NewLoop(h, fb, db, 50, 8000, 0, false, true, "", nil, imgProvider)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "draw a cat"})
+
+	// The streaming path should detect the tool call, delete the streamed
+	// message (empty text + Done), and trigger image generation.
+
+	// First: stream delete signal (empty text, Done=true).
+	select {
+	case su := <-h.Stream:
+		if su.Text != "" || !su.Done {
+			t.Errorf("expected delete signal (empty+done), got text=%q done=%v", su.Text, su.Done)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for stream delete signal")
+	}
+
+	// Then: "Generating image..." placeholder via Out.
+	out := readOut(t, h)
+	if out.Text != "Generating image..." {
+		t.Errorf("expected placeholder, got %q", out.Text)
+	}
+
+	// Then: image on the Image channel.
+	select {
+	case img := <-h.Image:
+		if img.ChatID != 1 {
+			t.Errorf("expected ChatID 1, got %d", img.ChatID)
+		}
+		if string(img.Data) != string(imgData) {
+			t.Errorf("expected image data, got %q", img.Data)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for image message")
+	}
+
+	// Buffered Chat should NOT have been called (streaming succeeded).
+	if sp.called {
+		t.Error("buffered Chat should not be called when streaming succeeds")
+	}
+}

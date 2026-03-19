@@ -410,6 +410,13 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 			if sp, ok := fb.Active().(provider.StreamingProvider); ok {
 				response, streamErr := l.handleStream(ctx, sp, messages, msg.ChatID)
 				if streamErr == nil {
+					// Check for image generation tool call in streamed response.
+					if l.imageProvider != nil {
+						if prompt, ok := parseImageToolCall(response); ok {
+							l.handleImageGeneration(ctx, msg, prompt, response)
+							return
+						}
+					}
 					l.saveAndProcess(msg, response)
 					return
 				}
@@ -566,6 +573,15 @@ func (l *Loop) handleStream(ctx context.Context, sp provider.StreamingProvider, 
 	})
 	if err != nil {
 		return "", err
+	}
+
+	// If the response contains an image tool call, delete the streamed
+	// message (which would contain raw XML) instead of finalizing it.
+	if l.imageProvider != nil {
+		if _, ok := parseImageToolCall(response); ok {
+			l.hub.Stream <- hub.StreamUpdate{ChatID: chatID, Text: "", Done: true}
+			return response, nil
+		}
 	}
 
 	// Send final update with the complete response (no "...").
