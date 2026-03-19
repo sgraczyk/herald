@@ -26,3 +26,4 @@ Thumbs.db
 
 # Playwright
 .playwright-mcp/
+.claude/.sf/
