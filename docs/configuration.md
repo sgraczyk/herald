@@ -57,6 +57,7 @@ Then run `./herald`. Herald looks for `config.json` in the current directory by 
   "history_limit": 50,
   "history_token_budget": 8000,
   "max_document_tokens": 4000,
+  "max_archived_conversations": 50,
   "summarize": false,
   "streaming": false,
   "max_retries": 1,
@@ -80,6 +81,7 @@ Then run `./herald`. Herald looks for `config.json` in the current directory by 
 | `history_limit` | integer | No | `50` | Max messages per chat |
 | `history_token_budget` | integer | No | `8000` | Estimated token budget for conversation history. Oldest messages are dropped when history exceeds this budget. Negative value disables token trimming. |
 | `max_document_tokens` | integer | No | `4000` | Max estimated tokens for extracted document text. PDFs exceeding this budget are truncated by page. ~4 characters per token. |
+| `max_archived_conversations` | integer | No | `50` | Max archived conversations per chat. Oldest pruned on `/new`. `0` disables pruning. |
 | `summarize` | boolean | No | `false` | Summarize pruned messages to preserve context across history trims |
 | `streaming` | boolean | No | `false` | Stream responses progressively via edit-in-place (see [Streaming Responses](features.md#streaming-responses)) |
 | `max_retries` | integer | No | `1` | Retries per provider for transient errors (timeouts, server errors). Set to `0` to disable. |

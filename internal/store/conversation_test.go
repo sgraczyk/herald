@@ -183,3 +183,89 @@ func TestArchiveSeparateChats(t *testing.T) {
 		t.Fatalf("expected 0 archives for chat 2, got %d", len(convs2))
 	}
 }
+
+func TestPruneArchivedExceedsLimit(t *testing.T) {
+	db := testDB(t)
+
+	// Archive 5 conversations.
+	for i := 0; i < 5; i++ {
+		if err := db.Append(1, msg("user", "hello"), 50); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+		if _, err := db.ArchiveConversation(1); err != nil {
+			t.Fatalf("archive %d: %v", i, err)
+		}
+	}
+
+	// Prune to limit 3.
+	if err := db.PruneArchived(1, 3); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+
+	convs, err := db.ListArchived(1)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(convs) != 3 {
+		t.Fatalf("expected 3 archives after prune, got %d", len(convs))
+	}
+}
+
+func TestPruneArchivedUnderLimit(t *testing.T) {
+	db := testDB(t)
+
+	// Archive 2 conversations.
+	for i := 0; i < 2; i++ {
+		if err := db.Append(1, msg("user", "hello"), 50); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+		if _, err := db.ArchiveConversation(1); err != nil {
+			t.Fatalf("archive %d: %v", i, err)
+		}
+	}
+
+	// Prune with limit 10 — should be a no-op.
+	if err := db.PruneArchived(1, 10); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+
+	convs, _ := db.ListArchived(1)
+	if len(convs) != 2 {
+		t.Fatalf("expected 2 archives (no pruning needed), got %d", len(convs))
+	}
+}
+
+func TestClearArchived(t *testing.T) {
+	db := testDB(t)
+
+	// Archive 3 conversations.
+	for i := 0; i < 3; i++ {
+		if err := db.Append(1, msg("user", "hello"), 50); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+		if _, err := db.ArchiveConversation(1); err != nil {
+			t.Fatalf("archive %d: %v", i, err)
+		}
+	}
+
+	if err := db.ClearArchived(1); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+
+	convs, err := db.ListArchived(1)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(convs) != 0 {
+		t.Fatalf("expected 0 archives after clear, got %d", len(convs))
+	}
+}
+
+func TestClearArchivedEmpty(t *testing.T) {
+	db := testDB(t)
+
+	// Clear on a chat with no archives — should not error.
+	if err := db.ClearArchived(999); err != nil {
+		t.Fatalf("clear empty: %v", err)
+	}
+}

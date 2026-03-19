@@ -20,18 +20,19 @@ import (
 
 // Loop reads messages from the hub, calls the provider, and writes responses back.
 type Loop struct {
-	hub                *hub.Hub
-	provider           provider.LLMProvider
-	extProvider        provider.LLMProvider // provider used for memory extraction and summarization
-	store              *store.DB
-	metrics            *metrics.Metrics
-	historyLimit       int
-	historyTokenBudget int
-	summarize          bool
-	streaming          bool
-	systemPrompt       string
-	startTime          time.Time
-	wg                 sync.WaitGroup
+	hub                      *hub.Hub
+	provider                 provider.LLMProvider
+	extProvider              provider.LLMProvider // provider used for memory extraction and summarization
+	store                    *store.DB
+	metrics                  *metrics.Metrics
+	historyLimit             int
+	historyTokenBudget       int
+	maxArchivedConversations int
+	summarize                bool
+	streaming                bool
+	systemPrompt             string
+	startTime                time.Time
+	wg                       sync.WaitGroup
 }
 
 // NewLoop creates a new agent loop. If systemPrompt is empty, the default
@@ -40,20 +41,23 @@ type Loop struct {
 // (zero is treated as "use default" by config loading). If m is nil, no
 // metrics are recorded. When summarize is true, old messages are summarized
 // before pruning. When streaming is true, providers that implement
-// StreamingProvider are used for incremental response delivery.
-func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget int, summarize, streaming bool, systemPrompt string, m *metrics.Metrics) *Loop {
+// StreamingProvider are used for incremental response delivery. The
+// maxArchived parameter limits how many archived conversations are kept per
+// chat (0 disables pruning, keeping all archives).
+func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget, maxArchived int, summarize, streaming bool, systemPrompt string, m *metrics.Metrics) *Loop {
 	return &Loop{
-		hub:                h,
-		provider:           p,
-		extProvider:        pickExtractionProvider(p),
-		store:              s,
-		metrics:            m,
-		historyLimit:       historyLimit,
-		historyTokenBudget: tokenBudget,
-		summarize:          summarize,
-		streaming:          streaming,
-		systemPrompt:       systemPrompt,
-		startTime:          time.Now(),
+		hub:                      h,
+		provider:                 p,
+		extProvider:              pickExtractionProvider(p),
+		store:                    s,
+		metrics:                  m,
+		historyLimit:             historyLimit,
+		historyTokenBudget:       tokenBudget,
+		maxArchivedConversations: maxArchived,
+		summarize:                summarize,
+		streaming:                streaming,
+		systemPrompt:             systemPrompt,
+		startTime:                time.Now(),
 	}
 }
 
@@ -283,10 +287,22 @@ func (l *Loop) handleNew(msg hub.InMessage) {
 		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "No active conversation to archive."}
 		return
 	}
+
+	if l.maxArchivedConversations > 0 {
+		if err := l.store.PruneArchived(msg.ChatID, l.maxArchivedConversations); err != nil {
+			slog.Error("prune archives failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
+		}
+	}
+
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Conversation archived. Starting fresh."}
 }
 
 func (l *Loop) handleConversations(msg hub.InMessage) {
+	if strings.TrimSpace(msg.Text) == "clear" {
+		l.handleConversationsClear(msg)
+		return
+	}
+
 	convs, err := l.store.ListArchived(msg.ChatID)
 	if err != nil {
 		slog.Error("list archived failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
@@ -300,6 +316,7 @@ func (l *Loop) handleConversations(msg hub.InMessage) {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "Archived conversations (%d):\n", len(convs))
+	b.WriteString("Use /conversations clear to remove all.\n")
 	for _, c := range convs {
 		preview := firstUserPreview(c.Messages)
 		fmt.Fprintf(&b, "\n%s — %d msgs", c.Timestamp.Format("2006-01-02 15:04"), len(c.Messages))
@@ -308,6 +325,15 @@ func (l *Loop) handleConversations(msg hub.InMessage) {
 		}
 	}
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: b.String()}
+}
+
+func (l *Loop) handleConversationsClear(msg hub.InMessage) {
+	if err := l.store.ClearArchived(msg.ChatID); err != nil {
+		slog.Error("clear archives failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to clear archives."}
+		return
+	}
+	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "All archived conversations cleared."}
 }
 
 // firstUserPreview returns the first 50 characters of the first user message.
@@ -593,15 +619,10 @@ func (l *Loop) extractMemories(ctx context.Context, chatID int64, userText, assi
 		l.metrics.IncExtractionSuccess()
 	}
 
-	// Parse JSON array from response. The LLM may wrap it in markdown fences.
-	resp = strings.TrimSpace(resp)
-	resp = strings.TrimPrefix(resp, "```json")
-	resp = strings.TrimPrefix(resp, "```")
-	resp = strings.TrimSuffix(resp, "```")
-	resp = strings.TrimSpace(resp)
-
-	var facts []string
-	if err := json.Unmarshal([]byte(resp), &facts); err != nil {
+	// Parse JSON array from response. The LLM may wrap it in markdown fences
+	// or other text, so we scan for the first '[' and use json.Decoder.
+	facts, err := parseFactsJSON(resp)
+	if err != nil {
 		slog.Debug("parse extracted memories failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()), slog.String("response", resp))
 		return
 	}
@@ -688,4 +709,30 @@ func (l *Loop) maybeSummarize(ctx context.Context, chatID int64) {
 	if err := l.store.SaveSummary(chatID, summary); err != nil {
 		slog.Error("save summary failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
 	}
+}
+
+// parseFactsJSON extracts a JSON string array from an LLM response that may
+// contain surrounding text or markdown fences. It scans for the first '['
+// and uses json.Decoder to parse the array.
+func parseFactsJSON(resp string) ([]string, error) {
+	idx := strings.Index(resp, "[")
+	if idx < 0 {
+		return nil, fmt.Errorf("no JSON array found in response")
+	}
+
+	dec := json.NewDecoder(strings.NewReader(resp[idx:]))
+	var raw []json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
+		return nil, fmt.Errorf("decode JSON array: %w", err)
+	}
+
+	facts := make([]string, 0, len(raw))
+	for _, r := range raw {
+		var s string
+		if err := json.Unmarshal(r, &s); err != nil {
+			return nil, fmt.Errorf("array element is not a string: %w", err)
+		}
+		facts = append(facts, s)
+	}
+	return facts, nil
 }

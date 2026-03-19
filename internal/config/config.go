@@ -17,7 +17,8 @@ type Config struct {
 	HistoryLimit       int              `json:"history_limit"`
 	HistoryTokenBudget int              `json:"history_token_budget,omitempty"`
 	MaxDocumentTokens  int              `json:"max_document_tokens,omitempty"`
-	MaxRetries         *int             `json:"max_retries,omitempty"`
+	MaxRetries               *int `json:"max_retries,omitempty"`
+	MaxArchivedConversations *int `json:"max_archived_conversations,omitempty"`
 	LogLevel           string           `json:"log_level"`
 	Summarize          bool             `json:"summarize,omitempty"`
 	Streaming          bool             `json:"streaming,omitempty"`
@@ -86,6 +87,11 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 	if cfg.MaxRetries == nil {
 		one := 1
 		cfg.MaxRetries = &one
+	}
+
+	if cfg.MaxArchivedConversations == nil {
+		fifty := 50
+		cfg.MaxArchivedConversations = &fifty
 	}
 
 	if cfg.Store.Path == "" {

@@ -1,12 +1,13 @@
 package provider
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
-	"bytes"
 	"testing"
 )
 
@@ -117,5 +118,110 @@ func TestPreprocessImageTallResized(t *testing.T) {
 	expectedW := 1000 * 2000 / 3000
 	if img.Bounds().Dx() != expectedW {
 		t.Errorf("expected width %d, got %d", expectedW, img.Bounds().Dx())
+	}
+}
+
+// buildMinimalEXIF creates a minimal EXIF block (Exif header + TIFF with one
+// IFD entry) containing only the orientation tag.
+func buildMinimalEXIF(orientation int) []byte {
+	var buf bytes.Buffer
+
+	// Exif header.
+	buf.WriteString("Exif\x00\x00")
+
+	// TIFF header: little-endian.
+	buf.Write([]byte("II"))                                          // byte order
+	binary.Write(&buf, binary.LittleEndian, uint16(0x002A))         // magic
+	binary.Write(&buf, binary.LittleEndian, uint32(8))              // offset to IFD0
+
+	// IFD0 at offset 8 from TIFF start.
+	binary.Write(&buf, binary.LittleEndian, uint16(1)) // 1 entry
+
+	// Entry: Orientation (tag 0x0112), type SHORT (3), count 1, value.
+	binary.Write(&buf, binary.LittleEndian, uint16(0x0112))      // tag
+	binary.Write(&buf, binary.LittleEndian, uint16(3))            // type: SHORT
+	binary.Write(&buf, binary.LittleEndian, uint32(1))            // count
+	binary.Write(&buf, binary.LittleEndian, uint16(orientation))  // value
+	binary.Write(&buf, binary.LittleEndian, uint16(0))            // padding
+
+	// Next IFD offset = 0 (no more IFDs).
+	binary.Write(&buf, binary.LittleEndian, uint32(0))
+
+	return buf.Bytes()
+}
+
+// makeJPEGWithEXIF creates a JPEG with a minimal EXIF APP1 segment containing
+// the given orientation value. The image is 20x10 (wider than tall).
+func makeJPEGWithEXIF(orientation int) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 20, 10))
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 20; x++ {
+			img.Set(x, y, color.RGBA{R: 0, G: 0, B: 255, A: 255})
+		}
+	}
+	img.Set(0, 0, color.RGBA{R: 255, G: 0, B: 0, A: 255})
+
+	var jpegBuf bytes.Buffer
+	jpeg.Encode(&jpegBuf, img, nil)
+	raw := jpegBuf.Bytes()
+
+	exifData := buildMinimalEXIF(orientation)
+
+	// Insert APP1 after the SOI marker (first 2 bytes of JPEG).
+	var out bytes.Buffer
+	out.Write(raw[:2]) // SOI
+	out.Write([]byte{0xFF, 0xE1})
+	segLen := uint16(len(exifData) + 2)
+	binary.Write(&out, binary.BigEndian, segLen)
+	out.Write(exifData)
+	out.Write(raw[2:])
+	return out.Bytes()
+}
+
+func TestPreprocessImageJPEGWithEXIFOrientation6(t *testing.T) {
+	// Orientation 6 = rotate 90 CW. A 20x10 image becomes 10x20.
+	data := makeJPEGWithEXIF(6)
+	got, err := PreprocessImage(data, "image/jpeg")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	decoded, _ := base64.StdEncoding.DecodeString(got.Base64)
+	img, _, _ := image.Decode(bytes.NewReader(decoded))
+
+	// After rotation: width and height should swap.
+	if img.Bounds().Dx() != 10 || img.Bounds().Dy() != 20 {
+		t.Errorf("expected 10x20 after rotation, got %dx%d", img.Bounds().Dx(), img.Bounds().Dy())
+	}
+}
+
+func TestPreprocessImageJPEGNoEXIF(t *testing.T) {
+	// A regular JPEG without EXIF should pass through with original dimensions.
+	data := makeJPEG(20, 10)
+	got, err := PreprocessImage(data, "image/jpeg")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	decoded, _ := base64.StdEncoding.DecodeString(got.Base64)
+	img, _, _ := image.Decode(bytes.NewReader(decoded))
+	if img.Bounds().Dx() != 20 || img.Bounds().Dy() != 10 {
+		t.Errorf("expected 20x10, got %dx%d", img.Bounds().Dx(), img.Bounds().Dy())
+	}
+}
+
+func TestPreprocessImagePNGSkipsEXIF(t *testing.T) {
+	// PNG should never have EXIF applied — dimensions stay the same.
+	data := makePNG(20, 10)
+	got, err := PreprocessImage(data, "image/png")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	decoded, _ := base64.StdEncoding.DecodeString(got.Base64)
+	img, _, _ := image.Decode(bytes.NewReader(decoded))
+	// PNG gets re-encoded as JPEG, dimensions should be preserved.
+	if img.Bounds().Dx() != 20 || img.Bounds().Dy() != 10 {
+		t.Errorf("expected 20x10, got %dx%d", img.Bounds().Dx(), img.Bounds().Dy())
 	}
 }
