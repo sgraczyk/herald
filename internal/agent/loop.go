@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sgraczyk/herald/internal/document"
 	"github.com/sgraczyk/herald/internal/hub"
 	"github.com/sgraczyk/herald/internal/metrics"
 	"github.com/sgraczyk/herald/internal/provider"
@@ -418,10 +419,25 @@ func (l *Loop) saveAndRespond(msg hub.InMessage, response string) {
 // response to hub.Out — use this when the response was already delivered
 // (e.g., via streaming).
 func (l *Loop) saveAndProcess(msg hub.InMessage, response string) {
+	// Save document as a system-role history message before the user message.
+	if msg.Document != nil {
+		docMsg := provider.Message{
+			Role:      "system",
+			Content:   document.FormatContext(msg.Document),
+			Timestamp: time.Now(),
+		}
+		if err := l.store.Append(msg.ChatID, docMsg, l.historyLimit); err != nil {
+			slog.Error("save document message failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
+		}
+	}
+
 	// Save user message. Strip images — store text placeholder instead.
 	userContent := msg.Text
 	if len(msg.Images) > 0 {
 		userContent = "[image] " + msg.Text
+	}
+	if msg.Document != nil {
+		userContent = fmt.Sprintf("[document: %s] %s", msg.Document.Name, userContent)
 	}
 	userMsg := provider.Message{
 		Role:      "user",
@@ -614,7 +630,14 @@ func (l *Loop) maybeSummarize(ctx context.Context, chatID int64) {
 
 	var b strings.Builder
 	for _, m := range pending {
-		fmt.Fprintf(&b, "%s: %s\n", m.Role, m.Content)
+		content := m.Content
+		// Replace large document text with a short placeholder for the summarizer.
+		if m.Role == "system" && strings.HasPrefix(content, "--- Document:") {
+			if idx := strings.Index(content, "\n"); idx > 0 {
+				content = content[:idx]
+			}
+		}
+		fmt.Fprintf(&b, "%s: %s\n", m.Role, content)
 	}
 
 	sumCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
