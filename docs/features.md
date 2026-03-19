@@ -52,6 +52,35 @@ A vision-capable OpenAI-compatible provider must be configured (e.g., a model wi
 - **WEBP passthrough.** WEBP images are not resized (no Go stdlib decoder without CGO) but are still subject to the 4 MB size cap.
 - **Single image per message.** Telegram sends one photo per message.
 
+## PDF Document Support
+
+Send a PDF file to Herald in Telegram. No commands needed -- Herald automatically extracts the text and responds.
+
+**With a caption:** Herald uses your caption as the prompt (e.g., "Summarize the key terms in this contract").
+
+**Without a caption:** Herald defaults to "What's in this document?" and gives a general description.
+
+### Follow-up Questions
+
+The document stays in conversation history. You can ask follow-up questions without re-sending the file. The document persists until you use `/new` or `/clear`.
+
+### Limitations
+
+- **Text-based PDFs only.** Scanned or image-based PDFs are not supported (OCR is not available).
+- **10 MB file size limit.** Larger files are rejected before download.
+- **Large PDFs are truncated.** If the document exceeds the token budget, Herald reads as many pages as fit and notes how many were omitted. Adjust `max_document_tokens` in config to change this limit.
+- **Single document per message.** Send one PDF at a time.
+- **Encrypted PDFs are not supported.**
+
+### Error Messages
+
+| Message | Cause |
+|---------|-------|
+| `Sorry, I can't read encrypted PDFs.` | PDF has a password or encryption |
+| `This PDF appears to be scanned/image-based. Text extraction isn't supported yet.` | PDF contains images rather than selectable text |
+| `Couldn't process this PDF. The file may be corrupted.` | Malformed or invalid PDF file |
+| `PDF too large (max 10 MB).` | File exceeds the size limit |
+
 ## Streaming Responses
 
 Set `"streaming": true` in config to enable progressive response delivery. Instead of waiting for the full response, Herald shows text as it arrives from the LLM, editing the message in place.
