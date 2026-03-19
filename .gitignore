@@ -29,4 +29,6 @@ docs/superpowers/
 
 # Playwright
 .playwright-mcp/
+
+# Claude Spec First (workspace)
 .claude/.sf/
