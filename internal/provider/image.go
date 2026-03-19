@@ -3,13 +3,12 @@ package provider
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/jpeg"
 	_ "image/png"
-	"log/slog"
 
-	"github.com/rwcarlsen/goexif/exif"
 	"golang.org/x/image/draw"
 )
 
@@ -81,23 +80,93 @@ func resizeImage(img image.Image, w, h int) image.Image {
 // transforms the decoded image accordingly. If the EXIF data cannot be read
 // or has no orientation tag, the image is returned unchanged.
 func applyEXIFOrientation(rawJPEG []byte, img image.Image) image.Image {
-	x, err := exif.Decode(bytes.NewReader(rawJPEG))
-	if err != nil {
-		slog.Debug("exif decode failed, skipping orientation", slog.String("error", err.Error()))
+	orient := readJPEGOrientation(rawJPEG)
+	if orient <= 1 || orient > 8 {
 		return img
 	}
-
-	tag, err := x.Get(exif.Orientation)
-	if err != nil {
-		return img // no orientation tag
-	}
-
-	orient, err := tag.Int(0)
-	if err != nil {
-		return img
-	}
-
 	return orientImage(img, orient)
+}
+
+// readJPEGOrientation extracts the EXIF orientation tag (0x0112) from raw
+// JPEG data. Returns 0 if the tag is absent or cannot be parsed.
+func readJPEGOrientation(data []byte) int {
+	// JPEG must start with SOI marker.
+	if len(data) < 4 || data[0] != 0xFF || data[1] != 0xD8 {
+		return 0
+	}
+
+	off := 2
+	for off+4 <= len(data) {
+		if data[off] != 0xFF {
+			return 0
+		}
+		marker := data[off+1]
+		segLen := int(data[off+2])<<8 | int(data[off+3])
+		if segLen < 2 {
+			return 0
+		}
+
+		if marker == 0xE1 { // APP1
+			if off+2+segLen > len(data) {
+				return 0
+			}
+			return parseEXIFOrientation(data[off+4 : off+2+segLen])
+		}
+
+		off += 2 + segLen
+
+		// Stop at SOS or past end.
+		if marker == 0xDA {
+			break
+		}
+	}
+	return 0
+}
+
+// parseEXIFOrientation parses a raw APP1 segment payload (after the length
+// field) looking for the EXIF orientation tag.
+func parseEXIFOrientation(seg []byte) int {
+	// Must start with "Exif\x00\x00".
+	if len(seg) < 14 || string(seg[:6]) != "Exif\x00\x00" {
+		return 0
+	}
+
+	tiff := seg[6:]
+
+	var bo binary.ByteOrder
+	switch string(tiff[:2]) {
+	case "II":
+		bo = binary.LittleEndian
+	case "MM":
+		bo = binary.BigEndian
+	default:
+		return 0
+	}
+
+	if bo.Uint16(tiff[2:4]) != 0x002A {
+		return 0
+	}
+
+	ifdOff := int(bo.Uint32(tiff[4:8]))
+	if ifdOff+2 > len(tiff) {
+		return 0
+	}
+
+	count := int(bo.Uint16(tiff[ifdOff : ifdOff+2]))
+	entryOff := ifdOff + 2
+
+	for i := 0; i < count; i++ {
+		eOff := entryOff + i*12
+		if eOff+12 > len(tiff) {
+			break
+		}
+		tag := bo.Uint16(tiff[eOff : eOff+2])
+		if tag == 0x0112 { // Orientation
+			return int(bo.Uint16(tiff[eOff+8 : eOff+10]))
+		}
+	}
+
+	return 0
 }
 
 // orientImage applies one of the 8 EXIF orientation transforms.

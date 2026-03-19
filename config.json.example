@@ -22,6 +22,7 @@
   "history_limit": 50,
   "history_token_budget": 8000,
   "max_document_tokens": 4000,
+  "max_archived_conversations": 50,
   "summarize": false,
   "streaming": false,
   "max_retries": 1,

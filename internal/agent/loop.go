@@ -43,7 +43,7 @@ type Loop struct {
 // before pruning. When streaming is true, providers that implement
 // StreamingProvider are used for incremental response delivery. The
 // maxArchived parameter limits how many archived conversations are kept per
-// chat (0 means no limit).
+// chat (0 disables pruning, keeping all archives).
 func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget, maxArchived int, summarize, streaming bool, systemPrompt string, m *metrics.Metrics) *Loop {
 	return &Loop{
 		hub:                      h,
@@ -316,6 +316,7 @@ func (l *Loop) handleConversations(msg hub.InMessage) {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "Archived conversations (%d):\n", len(convs))
+	b.WriteString("Use /conversations clear to remove all.\n")
 	for _, c := range convs {
 		preview := firstUserPreview(c.Messages)
 		fmt.Fprintf(&b, "\n%s — %d msgs", c.Timestamp.Format("2006-01-02 15:04"), len(c.Messages))

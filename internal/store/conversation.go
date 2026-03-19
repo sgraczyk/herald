@@ -117,25 +117,21 @@ func (d *DB) PruneArchived(chatID int64, limit int) error {
 			return nil
 		}
 
-		// Count entries.
-		count := 0
+		// Collect all keys in one pass.
+		var all [][]byte
 		c := chatArchives.Cursor()
 		for k, _ := c.First(); k != nil; k, _ = c.Next() {
-			count++
+			cp := make([]byte, len(k))
+			copy(cp, k)
+			all = append(all, cp)
 		}
 
-		toDelete := count - limit
+		toDelete := len(all) - limit
 		if toDelete <= 0 {
 			return nil
 		}
 
-		// Collect oldest keys.
-		keys := make([][]byte, 0, toDelete)
-		for k, _ := c.First(); k != nil && len(keys) < toDelete; k, _ = c.Next() {
-			cp := make([]byte, len(k))
-			copy(cp, k)
-			keys = append(keys, cp)
-		}
+		keys := all[:toDelete]
 
 		for _, k := range keys {
 			if err := chatArchives.Delete(k); err != nil {
