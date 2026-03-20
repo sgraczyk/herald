@@ -153,10 +153,11 @@ func testAdapter(t *testing.T, allowedIDs map[int64]bool) (*Adapter, *hub.Hub) {
 	t.Helper()
 	h := hub.New()
 	return &Adapter{
-		hub:        h,
-		allowedIDs: allowedIDs,
-		typing:     make(map[int64]context.CancelFunc),
-		streamMsgs: make(map[int64]int),
+		hub:          h,
+		allowedIDs:   allowedIDs,
+		typing:       make(map[int64]context.CancelFunc),
+		streamMsgs:   make(map[int64]int),
+		reactionMsgs: make(map[int64]int),
 	}, h
 }
 
