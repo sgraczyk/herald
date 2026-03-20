@@ -453,13 +453,26 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 					// detected a tool call, so we just need to execute it.
 					if l.hasTools() {
 						if tc := l.promptCaller.Parse(response); tc != nil {
-							text, execErr := l.executeToolCalls(ctx, msg, messages, response)
+							text, intermediates, execErr := l.executeToolCalls(ctx, msg, messages, response)
 							if execErr != nil {
-								l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: l.statusMessages.ProvGenericErr}
+								if l.metrics != nil {
+									l.metrics.IncFailed()
+								}
+								slog.Error("tool execution failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", execErr.Error()))
+								var errText string
+								switch {
+								case errors.Is(execErr, provider.ErrTimeout):
+									errText = l.statusMessages.ProvTimeout
+								case errors.Is(execErr, provider.ErrAuthFailure):
+									errText = l.statusMessages.ProvAuthError
+								default:
+									errText = l.statusMessages.ProvGenericErr
+								}
+								l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
 								return
 							}
 							if text != "" {
-								l.saveAndRespond(msg, text)
+								l.saveAndRespond(msg, text, intermediates...)
 							}
 							// When text is empty, executeToolCalls already handled save + routing.
 							return
@@ -481,7 +494,7 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 
 	// Tool execution path: use executeToolCalls when tools are registered.
 	if l.hasTools() {
-		text, execErr := l.executeToolCalls(ctx, msg, messages, "")
+		text, intermediates, execErr := l.executeToolCalls(ctx, msg, messages, "")
 		if execErr != nil {
 			if l.metrics != nil {
 				l.metrics.IncFailed()
@@ -500,7 +513,7 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 			return
 		}
 		if text != "" {
-			l.saveAndRespond(msg, text)
+			l.saveAndRespond(msg, text, intermediates...)
 		}
 		// When text is empty, executeToolCalls already called saveAndProcess
 		// and routed the binary result (e.g., image).
@@ -531,16 +544,19 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 
 // saveAndRespond saves messages to store, sends the response via hub.Out,
 // and triggers background memory extraction and summarization.
-func (l *Loop) saveAndRespond(msg hub.InMessage, response string) {
-	l.saveAndProcess(msg, response)
+// Optional intermediates are tool-call exchange messages to persist between
+// the user message and the final assistant response.
+func (l *Loop) saveAndRespond(msg hub.InMessage, response string, intermediates ...provider.Message) {
+	l.saveAndProcess(msg, response, intermediates...)
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: response}
 }
 
 // saveAndProcess saves messages to store and triggers background memory
 // extraction and summarization. Unlike saveAndRespond, it does NOT send the
 // response to hub.Out — use this when the response was already delivered
-// (e.g., via streaming).
-func (l *Loop) saveAndProcess(msg hub.InMessage, response string) {
+// (e.g., via streaming). Optional intermediates are tool-call exchange
+// messages persisted between the user message and the final assistant response.
+func (l *Loop) saveAndProcess(msg hub.InMessage, response string, intermediates ...provider.Message) {
 	// Save document as a system-role history message before the user message.
 	if msg.Document != nil {
 		docMsg := provider.Message{
@@ -568,6 +584,13 @@ func (l *Loop) saveAndProcess(msg hub.InMessage, response string) {
 	}
 	if err := l.store.Append(msg.ChatID, userMsg, l.historyLimit); err != nil {
 		slog.Error("save user message failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
+	}
+
+	// Save intermediate tool-call exchanges (assistant tool call + tool result).
+	for _, im := range intermediates {
+		if err := l.store.Append(msg.ChatID, im, l.historyLimit); err != nil {
+			slog.Error("save intermediate message failed", slog.Int64("chat_id", msg.ChatID), slog.String("role", im.Role), slog.String("error", err.Error()))
+		}
 	}
 
 	// Save assistant response.
@@ -679,7 +702,8 @@ const (
 // is parsed for a tool call directly (used when streaming already obtained a
 // response). Returns the final text response, or ("", nil) when the result was
 // a binary payload already delivered (e.g., image).
-func (l *Loop) executeToolCalls(ctx context.Context, msg hub.InMessage, messages []provider.Message, initialResponse string) (string, error) {
+func (l *Loop) executeToolCalls(ctx context.Context, msg hub.InMessage, messages []provider.Message, initialResponse string) (string, []provider.Message, error) {
+	var intermediates []provider.Message
 	for i := 0; i < maxToolCalls; i++ {
 		var response string
 		var tc *tool.ToolCall
@@ -693,7 +717,7 @@ func (l *Loop) executeToolCalls(ctx context.Context, msg hub.InMessage, messages
 			// Call the LLM.
 			resp, err := l.provider.Chat(ctx, messages)
 			if err != nil {
-				return "", err
+				return "", nil, err
 			}
 			response = resp
 
@@ -705,14 +729,14 @@ func (l *Loop) executeToolCalls(ctx context.Context, msg hub.InMessage, messages
 
 		// No tool call — pure text response.
 		if tc == nil {
-			return response, nil
+			return response, intermediates, nil
 		}
 
 		// Look up tool in registry.
 		t, ok := l.registry.Get(tc.Name)
 		if !ok {
 			slog.Warn("LLM requested unknown tool", slog.String("tool", tc.Name))
-			return response, nil
+			return response, intermediates, nil
 		}
 
 		slog.Info("tool call", slog.String("tool", tc.Name), slog.Int64("chat_id", msg.ChatID))
@@ -755,7 +779,7 @@ func (l *Loop) executeToolCalls(ctx context.Context, msg hub.InMessage, messages
 					errText = l.statusMessages.ImageGenericErr
 				}
 				l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
-				return "", nil
+				return "", nil, nil
 			}
 
 			// For other tools, feed error back to the LLM.
@@ -769,15 +793,15 @@ func (l *Loop) executeToolCalls(ctx context.Context, msg hub.InMessage, messages
 		// Route binary data (e.g., images).
 		if result.Data != nil {
 			l.routeBinaryResult(msg, tc.Name, result)
-			l.saveAndProcess(msg, response)
-			return "", nil
+			l.saveAndProcess(msg, response, intermediates...)
+			return "", nil, nil
 		}
 
 		// Feed text result back to the LLM for the next iteration.
-		messages = append(messages,
-			provider.Message{Role: "assistant", Content: response},
-			provider.Message{Role: "user", Content: fmt.Sprintf("Tool result for %q: %s", tc.Name, result.Text)},
-		)
+		assistantMsg := provider.Message{Role: "assistant", Content: response, Timestamp: time.Now()}
+		toolResultMsg := provider.Message{Role: "user", Content: fmt.Sprintf("Tool result for %q: %s", tc.Name, result.Text), Timestamp: time.Now()}
+		messages = append(messages, assistantMsg, toolResultMsg)
+		intermediates = append(intermediates, assistantMsg, toolResultMsg)
 	}
 
 	// Max iterations hit — ask LLM to produce a final answer.
@@ -787,9 +811,9 @@ func (l *Loop) executeToolCalls(ctx context.Context, msg hub.InMessage, messages
 	})
 	response, err := l.provider.Chat(ctx, messages)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return response, nil
+	return response, intermediates, nil
 }
 
 // routeBinaryResult delivers binary tool output (e.g., generated images) to
