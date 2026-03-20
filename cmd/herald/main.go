@@ -80,6 +80,15 @@ func serve(configPath string) error {
 
 	initLogging(cfg.LogLevel)
 
+	// Log config validation results.
+	vr := cfg.Validate()
+	for _, w := range vr.Warnings {
+		slog.Warn(w)
+	}
+	for _, d := range vr.Defaults {
+		slog.Info(d)
+	}
+
 	if cfg.SystemPrompt == "" {
 		slog.Info("system_prompt not set, using default")
 	} else if len(cfg.SystemPrompt) > 4000 {
