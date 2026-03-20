@@ -55,7 +55,7 @@ A vision-capable OpenAI-compatible provider must be configured (e.g., a model wi
 
 ## Image Generation
 
-Ask Herald to draw or create an image. The LLM interprets your request and generates an image using FLUX.1-schnell via Chutes.ai. No commands needed -- the LLM decides when image generation is appropriate.
+Ask Herald to draw or create an image. The LLM interprets your request and generates an image via Chutes.ai. No commands needed -- the LLM decides when image generation is appropriate. Multiple providers can be configured for fallback.
 
 **Examples:**
 
@@ -67,19 +67,22 @@ Herald sends a placeholder message while generating, then delivers the photo dir
 
 ### Requirements
 
-A Chutes.ai API key is required (the same key used for the chat provider). Add the `image_provider` section to `config.json`:
+A Chutes.ai API key is required. Add the `image_providers` section to `config.json`:
 
 ```json
 {
-  "image_provider": {
-    "type": "chutes",
-    "base_url": "https://chutes.ai/app/chute/a292d47b-8f0f-5662-b2b0-6f0ebba48031",
-    "api_key_env": "CHUTES_API_KEY"
-  }
+  "image_providers": [
+    {
+      "name": "z-image",
+      "type": "chutes",
+      "base_url": "https://api.chutes.ai/chutes/fe85d993-9a61-5cc1-a21e-64fe4e50d612",
+      "api_key_env": "CHUTES_API_KEY"
+    }
+  ]
 }
 ```
 
-Without this configuration, image generation is unavailable and the LLM will not attempt it.
+Without `image_providers`, image generation is unavailable and the LLM will not attempt it.
 
 ### Streaming Behavior
 
@@ -87,7 +90,7 @@ With streaming enabled, if the LLM decides to generate an image mid-stream, Hera
 
 ### Limitations
 
-- **FLUX.1-schnell only.** Other models can be used by changing the `base_url` to a different chute.
+- **Chutes.ai only.** Other providers can be added by implementing the `ImageProvider` interface.
 - **Fixed size.** All generated images are 1024x1024.
 - **20 MB upload limit.** Images exceeding Telegram's limit are rejected.
 - **60-second timeout.** Image generation requests time out after 60 seconds.

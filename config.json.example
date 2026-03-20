@@ -15,11 +15,20 @@
       "api_key_env": "CHUTES_API_KEY"
     }
   ],
-  "image_provider": {
-    "type": "none",
-    "base_url": "https://chutes.ai/app/chute/a292d47b-8f0f-5662-b2b0-6f0ebba48031",
-    "api_key_env": "CHUTES_API_KEY"
-  },
+  "image_providers": [
+    {
+      "name": "z-image",
+      "type": "chutes",
+      "base_url": "https://api.chutes.ai/chutes/fe85d993-9a61-5cc1-a21e-64fe4e50d612",
+      "api_key_env": "CHUTES_API_KEY"
+    },
+    {
+      "name": "flux",
+      "type": "chutes",
+      "base_url": "https://api.chutes.ai/chutes/a292d47b-8f0f-5662-b2b0-6f0ebba48031",
+      "api_key_env": "CHUTES_API_KEY"
+    }
+  ],
   "store": {
     "path": "herald.db"
   },

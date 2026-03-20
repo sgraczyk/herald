@@ -87,9 +87,11 @@ Then run `./herald`. Herald looks for `config.json` in the current directory by 
 | `max_retries` | integer | No | `1` | Retries per provider for transient errors (timeouts, server errors). Set to `0` to disable. |
 | `log_level` | string | No | `"info"` | Logging verbosity (see [Logging](logging.md)) |
 | `system_prompt` | string | No | (built-in) | Custom system prompt sent to the LLM |
-| `image_provider.type` | string | No | `"none"` | Image generation backend: `"chutes"` (Chutes.ai) or `"none"` (disabled) |
-| `image_provider.base_url` | string | If type is chutes | -- | Chute endpoint URL (e.g. `https://chutes.ai/app/chute/<id>`) |
-| `image_provider.api_key_env` | string | If type is chutes | -- | Env var name holding the Chutes.ai API key |
+| `image_providers` | array | No | `[]` | Image generation providers in fallback order |
+| `image_providers[].name` | string | Yes | -- | Display label (used in logs) |
+| `image_providers[].type` | string | Yes | -- | `"chutes"` (Chutes.ai) or `"none"` (skip entry) |
+| `image_providers[].base_url` | string | If type is chutes | -- | Chute API base URL (e.g. `https://api.chutes.ai/chutes/<id>`) |
+| `image_providers[].api_key_env` | string | If type is chutes | -- | Env var name holding the Chutes.ai API key |
 | `allowed_user_ids_env` | string | Yes | -- | Env var name holding comma-separated allowed Telegram user IDs |
 
 ## Environment Variables
@@ -146,19 +148,28 @@ Works with any OpenAI chat completions API: Chutes.ai, Groq, OpenRouter, local O
 | PDF (text-based) | Yes | Pure-Go extraction, max 10 MB, text truncated to `max_document_tokens` |
 | PDF (scanned/image) | No | Requires OCR — not supported yet |
 
-### Image Provider
+### Image Providers
 
-Herald can generate images using Chutes.ai (e.g. FLUX.1-schnell). This is separate from the chat providers -- it only handles image generation requests.
+Herald can generate images using Chutes.ai. Multiple providers can be configured for fallback -- if the first fails, Herald tries the next.
 
 ```json
-"image_provider": {
-  "type": "chutes",
-  "base_url": "https://chutes.ai/app/chute/a292d47b-8f0f-5662-b2b0-6f0ebba48031",
-  "api_key_env": "CHUTES_API_KEY"
-}
+"image_providers": [
+  {
+    "name": "z-image",
+    "type": "chutes",
+    "base_url": "https://api.chutes.ai/chutes/fe85d993-9a61-5cc1-a21e-64fe4e50d612",
+    "api_key_env": "CHUTES_API_KEY"
+  },
+  {
+    "name": "flux",
+    "type": "chutes",
+    "base_url": "https://api.chutes.ai/chutes/a292d47b-8f0f-5662-b2b0-6f0ebba48031",
+    "api_key_env": "CHUTES_API_KEY"
+  }
+]
 ```
 
-Set `type` to `"none"` (or omit the section entirely) to disable image generation. When disabled, the LLM does not see the image generation tool.
+Omit the section (or use an empty array) to disable image generation. When disabled, the LLM does not see the image generation tool.
 
 ### Recommended Setup
 
