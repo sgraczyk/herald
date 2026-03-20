@@ -41,6 +41,7 @@ func main() {
 
 	root.PersistentFlags().StringVarP(&configPath, "config", "c", "config.json", "path to config file")
 	root.AddCommand(newAskCmd())
+	root.AddCommand(newValidateCmd())
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)

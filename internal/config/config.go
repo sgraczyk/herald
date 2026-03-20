@@ -244,6 +244,10 @@ type ValidationResult struct {
 func (c *Config) Validate() ValidationResult {
 	var r ValidationResult
 
+	if c.presentKeys == nil {
+		c.presentKeys = make(map[string]bool)
+	}
+
 	// --- Warnings ---
 
 	if len(c.Providers) == 0 {
