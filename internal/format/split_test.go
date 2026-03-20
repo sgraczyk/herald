@@ -185,6 +185,27 @@ func TestSplit_DefaultMaxLen(t *testing.T) {
 	}
 }
 
+func TestSplit_PrefersOutsidePreBoundary(t *testing.T) {
+	// Outside \n\n appears early, then a <pre> block contains \n\n later.
+	// The old bestBoundary picks the last \n\n (inside <pre>).
+	// The new one should prefer the outside \n\n.
+	text := strings.Repeat("a", 20)
+	code := "<pre>" + strings.Repeat("x", 10) + "\n\n" + strings.Repeat("y", 10) + "</pre>"
+	s := text + "\n\n" + code
+	// total len = 20 + 2 + 5 + 10 + 2 + 10 + 6 = 55
+	got := Split(s, 50)
+	if len(got) < 2 {
+		t.Fatalf("expected multiple chunks, got %d", len(got))
+	}
+	// First chunk should end at the paragraph break outside <pre>
+	if !strings.HasSuffix(got[0], "\n\n") {
+		t.Errorf("first chunk should end at paragraph break, got: %q", got[0])
+	}
+	if strings.Contains(got[0], "<pre>") {
+		t.Errorf("first chunk should not contain <pre>, got: %q", got[0])
+	}
+}
+
 func TestSplit_MultipleChunks(t *testing.T) {
 	s := strings.Repeat("a", 500)
 	got := Split(s, 100)
