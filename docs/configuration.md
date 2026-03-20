@@ -90,7 +90,8 @@ Then run `./herald`. Herald looks for `config.json` in the current directory by 
 | `image_providers` | array | No | `[]` | Image generation providers in fallback order |
 | `image_providers[].name` | string | Yes | -- | Display label (used in logs) |
 | `image_providers[].type` | string | Yes | -- | `"chutes"` (Chutes.ai) or `"none"` (skip entry) |
-| `image_providers[].base_url` | string | If type is chutes | -- | Chute API base URL (e.g. `https://api.chutes.ai/chutes/<id>`) |
+| `image_providers[].base_url` | string | If type is chutes | -- | Chutes.ai base URL — slug-based subdomain (e.g. `https://chutes-z-image-turbo.chutes.ai`) or shared endpoint (`https://image.chutes.ai`) |
+| `image_providers[].model` | string | No | -- | Model identifier (e.g. `"FLUX.1-schnell"`). Required for shared-endpoint providers; omit for slug-based subdomains that serve a single model. |
 | `image_providers[].api_key_env` | string | If type is chutes | -- | Env var name holding the Chutes.ai API key |
 | `allowed_user_ids_env` | string | Yes | -- | Env var name holding comma-separated allowed Telegram user IDs |
 
@@ -157,13 +158,14 @@ Herald can generate images using Chutes.ai. Multiple providers can be configured
   {
     "name": "z-image",
     "type": "chutes",
-    "base_url": "https://api.chutes.ai/chutes/fe85d993-9a61-5cc1-a21e-64fe4e50d612",
+    "base_url": "https://chutes-z-image-turbo.chutes.ai",
     "api_key_env": "CHUTES_API_KEY"
   },
   {
     "name": "flux",
     "type": "chutes",
-    "base_url": "https://api.chutes.ai/chutes/a292d47b-8f0f-5662-b2b0-6f0ebba48031",
+    "base_url": "https://image.chutes.ai",
+    "model": "FLUX.1-schnell",
     "api_key_env": "CHUTES_API_KEY"
   }
 ]
