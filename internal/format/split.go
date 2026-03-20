@@ -79,8 +79,10 @@ func Split(html string, maxLen int) []string {
 }
 
 // bestBoundary finds the best split position at or before limit.
-// Prefers: paragraph break (\n\n) > newline > space > hard cut.
-// Delimiters inside HTML tags are ignored.
+// Prefers boundaries outside <pre> blocks over those inside.
+// Priority: outside-pre \n\n > outside-pre \n > inside-pre \n >
+// outside-pre space > inside-pre space > hard cut.
+// Delimiters inside HTML tags (between < and >) are always ignored.
 func bestBoundary(html string, limit int) int {
 	if limit <= 0 {
 		return 0
@@ -91,38 +93,94 @@ func bestBoundary(html string, limit int) int {
 
 	s := html[:limit]
 
-	if i := lastSafeIndex(s, "\n\n"); i > 0 {
-		return i + 2
+	// Single pass: track HTML tag boundaries and <pre> depth.
+	var (
+		inTag   bool
+		preDep  int
+		outsideParaBreak = -1 // priority 1
+		outsideNewline   = -1 // priority 2
+		insideNewline    = -1 // priority 3
+		outsideSpace     = -1 // priority 4
+		insideSpace      = -1 // priority 5
+	)
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+
+		if ch == '<' {
+			inTag = true
+			// Detect <pre> and </pre> for depth tracking.
+			if i+4 < len(s) && s[i+1:i+5] == "pre>" {
+				preDep++
+			} else if i+5 < len(s) && s[i+1:i+6] == "/pre>" {
+				preDep--
+				if preDep < 0 {
+					preDep = 0
+				}
+			}
+			continue
+		}
+		if ch == '>' {
+			inTag = false
+			continue
+		}
+
+		if inTag {
+			continue
+		}
+
+		inPre := preDep > 0
+
+		if ch == '\n' && i+1 < len(s) && s[i+1] == '\n' {
+			if !inPre {
+				outsideParaBreak = i
+			}
+			// \n\n inside pre counts as insideNewline (priority 3)
+			if inPre {
+				insideNewline = i
+			}
+			continue
+		}
+
+		if ch == '\n' {
+			if inPre {
+				insideNewline = i
+			} else {
+				outsideNewline = i
+			}
+			continue
+		}
+
+		if ch == ' ' {
+			if inPre {
+				insideSpace = i
+			} else {
+				outsideSpace = i
+			}
+		}
 	}
-	if i := lastSafeIndex(s, "\n"); i > 0 {
-		return i + 1
+
+	// Return best match by priority.
+	if outsideParaBreak > 0 {
+		return outsideParaBreak + 2
 	}
-	if i := lastSafeIndex(s, " "); i > 0 {
-		return i + 1
+	if outsideNewline > 0 {
+		return outsideNewline + 1
+	}
+	if insideNewline > 0 {
+		return insideNewline + 1
+	}
+	if outsideSpace > 0 {
+		return outsideSpace + 1
+	}
+	if insideSpace > 0 {
+		return insideSpace + 1
 	}
 
 	// Hard cut: avoid landing inside a tag or entity.
 	limit = avoidTagSplit(html, limit)
 	limit = avoidEntitySplit(html, limit)
 	return limit
-}
-
-// lastSafeIndex returns the last index of delim in s that is not inside an HTML tag.
-// Returns -1 if not found.
-func lastSafeIndex(s, delim string) int {
-	inTag := false
-	last := -1
-	dlen := len(delim)
-	for i := 0; i < len(s); i++ {
-		if s[i] == '<' {
-			inTag = true
-		} else if s[i] == '>' {
-			inTag = false
-		} else if !inTag && i+dlen <= len(s) && s[i:i+dlen] == delim {
-			last = i
-		}
-	}
-	return last
 }
 
 // avoidTagSplit adjusts limit to avoid splitting inside an HTML tag.

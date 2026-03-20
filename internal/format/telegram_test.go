@@ -192,6 +192,79 @@ func TestTelegramHTML_MixedContent(t *testing.T) {
 	}
 }
 
+func TestTelegramHTML_NestedUnorderedList(t *testing.T) {
+	input := "- top\n  - nested"
+	got := TelegramHTML(input)
+	want := "• top\n\u00a0\u00a0◦ nested"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestTelegramHTML_DeeplyNestedUnorderedList(t *testing.T) {
+	input := "- top\n  - mid\n    - deep"
+	got := TelegramHTML(input)
+	want := "• top\n\u00a0\u00a0◦ mid\n\u00a0\u00a0\u00a0\u00a0▪ deep"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestTelegramHTML_NestedOrderedList(t *testing.T) {
+	input := "1. top\n   1. nested\n   2. also nested"
+	got := TelegramHTML(input)
+	want := "1. top\n\u00a0\u00a01. nested\n\u00a0\u00a02. also nested"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestTelegramHTML_MixedNestedList(t *testing.T) {
+	input := "1. top\n   - nested bullet"
+	got := TelegramHTML(input)
+	want := "1. top\n\u00a0\u00a0◦ nested bullet"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestTelegramHTML_NestedListDepthCap(t *testing.T) {
+	input := "- a\n  - b\n    - c\n      - d"
+	got := TelegramHTML(input)
+	// 4th level should render same as 3rd level (depth capped at 2)
+	if !strings.Contains(got, "\u00a0\u00a0\u00a0\u00a0▪ c") {
+		t.Errorf("expected depth-2 bullet for 'c', got:\n%s", got)
+	}
+	if !strings.Contains(got, "\u00a0\u00a0\u00a0\u00a0▪ d") {
+		t.Errorf("expected depth-2 bullet for 'd' (capped), got:\n%s", got)
+	}
+}
+
+func TestTelegramHTML_TopLevelLooseList(t *testing.T) {
+	// Top-level loose list should still get \n\n paragraph spacing
+	input := "- item one\n\n- item two"
+	got := TelegramHTML(input)
+	if !strings.Contains(got, "• item one") {
+		t.Errorf("expected bullet for item one, got:\n%s", got)
+	}
+	if !strings.Contains(got, "• item two") {
+		t.Errorf("expected bullet for item two, got:\n%s", got)
+	}
+}
+
+func TestTelegramHTML_LooseNestedList(t *testing.T) {
+	// Loose list: blank line between items makes goldmark wrap content in Paragraph nodes
+	input := "- top\n\n  - nested\n\n  - also nested"
+	got := TelegramHTML(input)
+	// Nested items should NOT get double-spaced \n\n between them
+	if strings.Contains(got, "nested\n\n") {
+		t.Errorf("nested items should not be double-spaced, got:\n%s", got)
+	}
+	if !strings.Contains(got, "◦ nested") {
+		t.Errorf("expected nested bullet, got:\n%s", got)
+	}
+}
+
 func BenchmarkTelegramHTML(b *testing.B) {
 	input := `# Weather Report
 
