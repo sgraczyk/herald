@@ -51,6 +51,7 @@ type ImageProviderConfig struct {
 	Name      string `json:"name"`
 	Type      string `json:"type"` // "chutes" or "none"
 	BaseURL   string `json:"base_url,omitempty"`
+	Model     string `json:"model,omitempty"`
 	APIKeyEnv string `json:"api_key_env,omitempty"`
 	APIKey    string `json:"-"`
 }

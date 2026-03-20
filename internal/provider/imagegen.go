@@ -29,21 +29,25 @@ const chutesTimeout = 60 * time.Second
 // separate from maxResponseSize which caps LLM text responses.
 const maxImageResponseSize = 20 << 20
 
-// Chutes generates images using the Chutes.ai API (e.g. FLUX.1-schnell).
+// Chutes generates images using the Chutes.ai API.
 type Chutes struct {
 	name    string
 	baseURL string
+	model   string
 	apiKey  string
 	client  *http.Client
 }
 
-// NewChutes creates a new Chutes.ai image provider. The baseURL is the chute
-// API base (e.g. "https://api.chutes.ai/chutes/<id>"); "/generate" is appended
-// internally.
-func NewChutes(name, baseURL, apiKey string) *Chutes {
+// NewChutes creates a new Chutes.ai image provider. The baseURL depends on the
+// provider type: slug-based subdomains like "https://chutes-z-image-turbo.chutes.ai"
+// or the shared image endpoint "https://image.chutes.ai". "/generate" is
+// appended internally. When model is non-empty (e.g. "FLUX.1-schnell"), it is
+// included in the request body.
+func NewChutes(name, baseURL, model, apiKey string) *Chutes {
 	return &Chutes{
 		name:    name,
 		baseURL: strings.TrimRight(baseURL, "/"),
+		model:   model,
 		apiKey:  apiKey,
 		client:  &http.Client{Timeout: chutesTimeout},
 	}
@@ -55,11 +59,10 @@ func (c *Chutes) Name() string { return c.name }
 // Generate creates an image from a text prompt using the Chutes.ai API.
 func (c *Chutes) Generate(ctx context.Context, prompt string) ([]byte, error) {
 	reqBody := chutesRequest{
-		InputArgs: chutesInputArgs{
-			Prompt: prompt,
-			Width:  1024,
-			Height: 1024,
-		},
+		Model:  c.model,
+		Prompt: prompt,
+		Width:  1024,
+		Height: 1024,
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -163,10 +166,7 @@ func (f *ImageFallback) Generate(ctx context.Context, prompt string) ([]byte, er
 }
 
 type chutesRequest struct {
-	InputArgs chutesInputArgs `json:"input_args"`
-}
-
-type chutesInputArgs struct {
+	Model  string `json:"model,omitempty"`
 	Prompt string `json:"prompt"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`

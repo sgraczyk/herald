@@ -122,7 +122,7 @@ func serve(configPath string) error {
 			slog.Warn("image provider skipped: API key not set", slog.String("name", ip.Name))
 			continue
 		}
-		imgProviders = append(imgProviders, provider.NewChutes(ip.Name, ip.BaseURL, ip.APIKey))
+		imgProviders = append(imgProviders, provider.NewChutes(ip.Name, ip.BaseURL, ip.Model, ip.APIKey))
 		slog.Debug("image provider configured", slog.String("name", ip.Name))
 	}
 

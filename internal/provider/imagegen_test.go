@@ -12,7 +12,7 @@ import (
 )
 
 func TestChutes_Generate(t *testing.T) {
-	fakeImage := []byte("fake-jpeg-image-data")
+	fakeImage := []byte("fake-png-image-data")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -28,32 +28,42 @@ func TestChutes_Generate(t *testing.T) {
 			t.Errorf("unexpected content-type: %s", r.Header.Get("Content-Type"))
 		}
 
-		var req struct {
-			InputArgs struct {
-				Prompt string `json:"prompt"`
-				Width  int    `json:"width"`
-				Height int    `json:"height"`
-			} `json:"input_args"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Decode into a generic map to verify flat body (no input_args wrapper).
+		var raw map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		if req.InputArgs.Prompt != "a cute cat" {
-			t.Errorf("expected prompt 'a cute cat', got %s", req.InputArgs.Prompt)
+		if _, ok := raw["input_args"]; ok {
+			t.Error("request body contains input_args wrapper, expected flat body")
 		}
-		if req.InputArgs.Width != 1024 {
-			t.Errorf("expected width 1024, got %d", req.InputArgs.Width)
-		}
-		if req.InputArgs.Height != 1024 {
-			t.Errorf("expected height 1024, got %d", req.InputArgs.Height)
+		if _, ok := raw["model"]; ok {
+			t.Error("request body contains model field, expected none for z-image-turbo")
 		}
 
-		w.Header().Set("Content-Type", "image/jpeg")
+		var req struct {
+			Prompt string `json:"prompt"`
+			Width  int    `json:"width"`
+			Height int    `json:"height"`
+		}
+		if err := json.Unmarshal(mustMarshal(t, raw), &req); err != nil {
+			t.Fatalf("unmarshal flat body: %v", err)
+		}
+		if req.Prompt != "a cute cat" {
+			t.Errorf("expected prompt 'a cute cat', got %s", req.Prompt)
+		}
+		if req.Width != 1024 {
+			t.Errorf("expected width 1024, got %d", req.Width)
+		}
+		if req.Height != 1024 {
+			t.Errorf("expected height 1024, got %d", req.Height)
+		}
+
+		w.Header().Set("Content-Type", "image/png")
 		w.Write(fakeImage)
 	}))
 	defer srv.Close()
 
-	c := NewChutes("test", srv.URL, "test-key")
+	c := NewChutes("test", srv.URL, "", "test-key")
 
 	result, err := c.Generate(context.Background(), "a cute cat")
 	if err != nil {
@@ -64,6 +74,62 @@ func TestChutes_Generate(t *testing.T) {
 	}
 }
 
+func TestChutes_GenerateWithModel(t *testing.T) {
+	fakeImage := []byte("fake-jpeg-image-data")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var raw map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if _, ok := raw["input_args"]; ok {
+			t.Error("request body contains input_args wrapper, expected flat body")
+		}
+
+		var model string
+		if m, ok := raw["model"]; ok {
+			if err := json.Unmarshal(m, &model); err != nil {
+				t.Fatalf("unmarshal model: %v", err)
+			}
+		}
+		if model != "FLUX.1-schnell" {
+			t.Errorf("expected model 'FLUX.1-schnell', got %q", model)
+		}
+
+		var prompt string
+		if err := json.Unmarshal(raw["prompt"], &prompt); err != nil {
+			t.Fatalf("unmarshal prompt: %v", err)
+		}
+		if prompt != "a cute cat" {
+			t.Errorf("expected prompt 'a cute cat', got %s", prompt)
+		}
+
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Write(fakeImage)
+	}))
+	defer srv.Close()
+
+	c := NewChutes("flux", srv.URL, "FLUX.1-schnell", "test-key")
+
+	result, err := c.Generate(context.Background(), "a cute cat")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if string(result) != string(fakeImage) {
+		t.Errorf("expected %q, got %q", fakeImage, result)
+	}
+}
+
+// mustMarshal re-marshals a map for decoding into a typed struct.
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	return b
+}
+
 func TestChutes_GenerateAPIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
@@ -71,7 +137,7 @@ func TestChutes_GenerateAPIError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewChutes("test", srv.URL, "test-key")
+	c := NewChutes("test", srv.URL, "", "test-key")
 
 	_, err := c.Generate(context.Background(), "bad prompt")
 	if err == nil {
@@ -86,7 +152,7 @@ func TestChutes_GenerateAuthError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewChutes("test", srv.URL, "bad-key")
+	c := NewChutes("test", srv.URL, "", "bad-key")
 
 	_, err := c.Generate(context.Background(), "a cat")
 	if err == nil {
@@ -104,7 +170,7 @@ func TestChutes_GenerateEmptyBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewChutes("test", srv.URL, "test-key")
+	c := NewChutes("test", srv.URL, "", "test-key")
 
 	_, err := c.Generate(context.Background(), "a cat")
 	if err == nil {
