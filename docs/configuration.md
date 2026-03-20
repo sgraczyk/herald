@@ -87,6 +87,11 @@ Then run `./herald`. Herald looks for `config.json` in the current directory by 
 | `max_retries` | integer | No | `1` | Retries per provider for transient errors (timeouts, server errors). Set to `0` to disable. |
 | `log_level` | string | No | `"info"` | Logging verbosity (see [Logging](logging.md)) |
 | `system_prompt` | string | No | (built-in) | Custom system prompt sent to the LLM |
+| `image_providers` | array | No | `[]` | Image generation providers in fallback order |
+| `image_providers[].name` | string | Yes | -- | Display label (used in logs) |
+| `image_providers[].type` | string | Yes | -- | `"chutes"` (Chutes.ai) or `"none"` (skip entry) |
+| `image_providers[].base_url` | string | If type is chutes | -- | Chute API base URL (e.g. `https://api.chutes.ai/chutes/<id>`) |
+| `image_providers[].api_key_env` | string | If type is chutes | -- | Env var name holding the Chutes.ai API key |
 | `allowed_user_ids_env` | string | Yes | -- | Env var name holding comma-separated allowed Telegram user IDs |
 
 ## Environment Variables
@@ -97,7 +102,7 @@ Secrets are never stored in the config file. The config contains env var **names
 |----------|----------|---------|
 | `TELEGRAM_TOKEN` | Yes | Telegram bot token from BotFather |
 | `ALLOWED_USER_IDS` | Yes | Comma-separated Telegram user IDs (spaces around commas are fine) |
-| `CHUTES_API_KEY` | If using openai provider | API key for the OpenAI-compatible provider |
+| `CHUTES_API_KEY` | If using openai provider | API key for the OpenAI-compatible provider (also used for image generation) |
 | `CLAUDE_TOKEN_EXPIRES` | No | Expiry date shown in `/health` endpoint |
 | `LOG_LEVEL` | No | Overrides `log_level` from config (useful for temporary debugging) |
 
@@ -142,6 +147,29 @@ Works with any OpenAI chat completions API: Chutes.ai, Groq, OpenRouter, local O
 |--------|:---------:|-------|
 | PDF (text-based) | Yes | Pure-Go extraction, max 10 MB, text truncated to `max_document_tokens` |
 | PDF (scanned/image) | No | Requires OCR — not supported yet |
+
+### Image Providers
+
+Herald can generate images using Chutes.ai. Multiple providers can be configured for fallback -- if the first fails, Herald tries the next.
+
+```json
+"image_providers": [
+  {
+    "name": "z-image",
+    "type": "chutes",
+    "base_url": "https://api.chutes.ai/chutes/fe85d993-9a61-5cc1-a21e-64fe4e50d612",
+    "api_key_env": "CHUTES_API_KEY"
+  },
+  {
+    "name": "flux",
+    "type": "chutes",
+    "base_url": "https://api.chutes.ai/chutes/a292d47b-8f0f-5662-b2b0-6f0ebba48031",
+    "api_key_env": "CHUTES_API_KEY"
+  }
+]
+```
+
+Omit the section (or use an empty array) to disable image generation. When disabled, the LLM does not see the image generation tool.
 
 ### Recommended Setup
 
@@ -201,3 +229,5 @@ Herald embeds `config.json.example` into the binary at build time via `//go:embe
 | `claude CLI not found on PATH` | Claude Code CLI not installed | Install Claude Code CLI (requires Node.js) |
 | `no providers configured` | Empty providers array | At least one provider must be in config |
 | Photos fail after update | Model lacks vision support | Confirm vision-capable model in config (look for `VL` suffix) |
+| Image generation times out | Chutes.ai slow or unreachable | Check network; 60s timeout is not configurable |
+| `API error (status 401)` from image provider | Invalid Chutes.ai API key | Update `CHUTES_API_KEY` in `.env`, restart |

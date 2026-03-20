@@ -85,6 +85,7 @@ func (a *Adapter) Start(ctx context.Context) {
 	go a.dispatchOut(ctx)
 	go a.dispatchTyping(ctx)
 	go a.dispatchStream(ctx)
+	go a.dispatchImage(ctx)
 
 	// Start long polling (blocks).
 	a.bot.Start(ctx)
@@ -469,6 +470,25 @@ func (a *Adapter) dispatchStream(ctx context.Context) {
 				a.mu.Lock()
 				delete(a.streamMsgs, update.ChatID)
 				a.mu.Unlock()
+			}
+		}
+	}
+}
+
+func (a *Adapter) dispatchImage(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case img := <-a.hub.Image:
+			a.stopTyping(img.ChatID)
+
+			_, err := a.bot.SendPhoto(ctx, &bot.SendPhotoParams{
+				ChatID: img.ChatID,
+				Photo:  &models.InputFileUpload{Filename: "image.png", Data: bytes.NewReader(img.Data)},
+			})
+			if err != nil {
+				slog.Error("send photo failed", slog.Int64("chat_id", img.ChatID), slog.String("error", err.Error()))
 			}
 		}
 	}

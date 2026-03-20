@@ -112,11 +112,37 @@ func serve(configPath string) error {
 
 	chain := provider.NewFallback(providers, *cfg.MaxRetries, m)
 
+	// Build image providers.
+	var imgProviders []provider.ImageProvider
+	for _, ip := range cfg.ImageProviders {
+		if ip.Type != "chutes" {
+			continue
+		}
+		if ip.APIKey == "" {
+			slog.Warn("image provider skipped: API key not set", slog.String("name", ip.Name))
+			continue
+		}
+		imgProviders = append(imgProviders, provider.NewChutes(ip.Name, ip.BaseURL, ip.APIKey))
+		slog.Debug("image provider configured", slog.String("name", ip.Name))
+	}
+
+	var imgProvider provider.ImageProvider
+	switch len(imgProviders) {
+	case 0:
+		// Image generation disabled.
+	case 1:
+		imgProvider = imgProviders[0]
+		slog.Info("image generation enabled", slog.String("provider", imgProviders[0].Name()))
+	default:
+		imgProvider = provider.NewImageFallback(imgProviders)
+		slog.Info("image generation enabled", slog.Int("providers", len(imgProviders)))
+	}
+
 	// Create hub.
 	h := hub.New()
 
 	// Create agent loop.
-	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.HistoryTokenBudget, *cfg.MaxArchivedConversations, cfg.Summarize, cfg.Streaming, cfg.SystemPrompt, m)
+	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.HistoryTokenBudget, *cfg.MaxArchivedConversations, cfg.Summarize, cfg.Streaming, cfg.SystemPrompt, m, imgProvider)
 
 	// Create Telegram adapter.
 	tg, err := telegram.New(cfg.Telegram.Token, h, cfg.AllowedUserIDs, document.NewPDFExtractor(cfg.MaxDocumentTokens))

@@ -35,6 +35,8 @@ Telegram ──write──> Hub.In ──read──> Agent Loop ──call──
                                          │
                                          ├──write──> Hub.Stream ──read──> Telegram (edit-in-place, plain text)
                                          │
+                                         ├──write──> Hub.Image ──read──> Telegram (send photo)
+                                         │
                                          └──write──> Hub.Out ──read──> Format (md→HTML) ──send──> Telegram
 ```
 
@@ -86,6 +88,7 @@ internal/
     openai.go                # OpenAI-compatible HTTP client (Chutes.ai, Groq, etc.)
     fallback.go              # Try providers in order, return first success
     image.go                 # Image/photo handling for LLM providers
+    imagegen.go              # ImageProvider interface + Chutes.ai implementation
     validate.go              # Provider configuration validation
   store/
     db.go                    # bbolt init (go.etcd.io/bbolt, pure Go)

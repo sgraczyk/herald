@@ -53,6 +53,49 @@ A vision-capable OpenAI-compatible provider must be configured (e.g., a model wi
 - **EXIF orientation corrected.** JPEG images are automatically rotated according to their EXIF orientation tag before being sent to the LLM.
 - **Single image per message.** Telegram sends one photo per message.
 
+## Image Generation
+
+Ask Herald to draw or create an image. The LLM interprets your request and generates an image via Chutes.ai. No commands needed -- the LLM decides when image generation is appropriate. Multiple providers can be configured for fallback.
+
+**Examples:**
+
+- "Draw a cat sitting on a keyboard"
+- "Create an image of a sunset over mountains"
+- "Generate a logo for a coffee shop"
+
+Herald sends a placeholder message while generating, then delivers the photo directly in chat. Follow-up requests work -- the conversation retains context about what was generated.
+
+### Requirements
+
+A Chutes.ai API key is required. Add the `image_providers` section to `config.json`:
+
+```json
+{
+  "image_providers": [
+    {
+      "name": "z-image",
+      "type": "chutes",
+      "base_url": "https://api.chutes.ai/chutes/fe85d993-9a61-5cc1-a21e-64fe4e50d612",
+      "api_key_env": "CHUTES_API_KEY"
+    }
+  ]
+}
+```
+
+Without `image_providers`, image generation is unavailable and the LLM will not attempt it.
+
+### Streaming Behavior
+
+With streaming enabled, if the LLM decides to generate an image mid-stream, Herald deletes the partial streamed message and proceeds with image generation. The user sees the placeholder followed by the image.
+
+### Limitations
+
+- **Chutes.ai only.** Other providers can be added by implementing the `ImageProvider` interface.
+- **Fixed size.** All generated images are 1024x1024.
+- **20 MB upload limit.** Images exceeding Telegram's limit are rejected.
+- **60-second timeout.** Image generation requests time out after 60 seconds.
+- **Paid API.** Image generation incurs costs on your Chutes.ai account.
+
 ## PDF Document Support
 
 Send a PDF file to Herald in Telegram. No commands needed -- Herald automatically extracts the text and responds.

@@ -36,6 +36,12 @@ type OutMessage struct {
 	Text   string
 }
 
+// ImageMessage represents an outgoing photo to be sent.
+type ImageMessage struct {
+	ChatID int64
+	Data   []byte // raw image bytes (PNG/JPEG)
+}
+
 // StreamUpdate represents a partial response update for in-place editing.
 type StreamUpdate struct {
 	ChatID int64
@@ -47,6 +53,7 @@ type StreamUpdate struct {
 type Hub struct {
 	In     chan InMessage
 	Out    chan OutMessage
+	Image  chan ImageMessage // outgoing photos
 	Typing chan int64        // ChatID to send typing indicator for
 	Stream chan StreamUpdate // streaming response updates
 
@@ -58,6 +65,7 @@ func New() *Hub {
 	return &Hub{
 		In:     make(chan InMessage, 64),
 		Out:    make(chan OutMessage, 64),
+		Image:  make(chan ImageMessage, 16),
 		Typing: make(chan int64, 64),
 		Stream: make(chan StreamUpdate, 64),
 	}

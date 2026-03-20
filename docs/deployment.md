@@ -48,3 +48,14 @@ journalctl -u herald --no-pager -n 20
 ```
 
 Look for: `create telegram adapter: no valid allowed user IDs configured`
+
+## Credentials
+
+Herald uses the following environment variables in `/etc/herald/.env`:
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `TELEGRAM_TOKEN` | Always | Telegram Bot API token |
+| `ALLOWED_USER_IDS` | Always | Comma-separated Telegram user IDs |
+| `CHUTES_API_KEY` | If using Chutes.ai | LLM fallback and image generation |
+| `CLAUDE_TOKEN_EXPIRES` | Optional | Shown in `/health` response |

@@ -36,7 +36,7 @@ func testLoop(t *testing.T, p provider.LLMProvider) (*Loop, *hub.Hub, *store.DB)
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	l := NewLoop(h, p, db, 50, 8000, 0, false, false, "", nil)
+	l := NewLoop(h, p, db, 50, 8000, 0, false, false, "", nil, nil)
 	return l, h, db
 }
 
@@ -340,7 +340,7 @@ func TestBuildMessagesWithMemories(t *testing.T) {
 		{Fact: "prefers Go", Source: "explicit"},
 	}
 
-	msgs := buildMessages(history, memories, "hello", "", "")
+	msgs := buildMessages(history, memories, "hello", "", "", false)
 
 	if len(msgs) != 3 {
 		t.Fatalf("expected 3 messages, got %d", len(msgs))
@@ -406,7 +406,7 @@ func TestSelectMemoriesUnderLimit(t *testing.T) {
 
 func TestBuildMessagesWithCustomPrompt(t *testing.T) {
 	custom := "You are a pirate assistant."
-	msgs := buildMessages(nil, nil, "hello", custom, "")
+	msgs := buildMessages(nil, nil, "hello", custom, "", false)
 
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(msgs))
@@ -417,7 +417,7 @@ func TestBuildMessagesWithCustomPrompt(t *testing.T) {
 }
 
 func TestBuildMessagesWithoutMemories(t *testing.T) {
-	msgs := buildMessages(nil, nil, "hello", "", "")
+	msgs := buildMessages(nil, nil, "hello", "", "", false)
 
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(msgs))
@@ -690,7 +690,7 @@ func TestSummarizationBeforePrune(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	// Create loop with summarize=true and limit=4.
-	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil)
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil, nil)
 
 	// Fill history to limit: 4 messages.
 	for i := 0; i < 4; i++ {
@@ -726,7 +726,7 @@ func TestSummarizationFailureDoesNotBreakFlow(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil)
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil, nil)
 
 	// Fill history to limit.
 	for i := 0; i < 4; i++ {
@@ -761,7 +761,7 @@ func TestSummaryInContext(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	l := NewLoop(h, cap, db, 50, 8000, 0, true, false, "", nil)
+	l := NewLoop(h, cap, db, 50, 8000, 0, true, false, "", nil, nil)
 	l.extProvider = cap
 
 	// Store a summary.
@@ -784,7 +784,7 @@ func TestSummaryInContext(t *testing.T) {
 }
 
 func TestBuildMessagesWithSummary(t *testing.T) {
-	msgs := buildMessages(nil, nil, "hello", "", "User likes Go.")
+	msgs := buildMessages(nil, nil, "hello", "", "User likes Go.", false)
 
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(msgs))
@@ -967,7 +967,7 @@ func TestSummarizationCompactsDocumentText(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	// Create loop with summarize=true and limit=4.
-	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil)
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil, nil)
 
 	// Fill history: a document system message + 3 regular messages = 4 total.
 	longDocText := "--- Document: invoice.pdf (2 pages) ---\n" + strings.Repeat("Invoice line item. ", 500) + "\n--- End of document ---"
@@ -1091,6 +1091,182 @@ func TestConversationsClearCommand(t *testing.T) {
 	}
 }
 
+func TestParseImageToolCall(t *testing.T) {
+	tests := []struct {
+		name      string
+		response  string
+		wantOK    bool
+		wantPrompt string
+	}{
+		{
+			name: "valid tool call",
+			response: `<tool_use>
+<name>generate_image</name>
+<parameters>
+<prompt>a cute orange cat sitting on a windowsill</prompt>
+</parameters>
+</tool_use>`,
+			wantOK:     true,
+			wantPrompt: "a cute orange cat sitting on a windowsill",
+		},
+		{
+			name:     "no tool call",
+			response: "Here is a description of a cat.",
+			wantOK:   false,
+		},
+		{
+			name: "different tool name",
+			response: `<tool_use>
+<name>other_tool</name>
+<parameters>
+<prompt>something</prompt>
+</parameters>
+</tool_use>`,
+			wantOK: false,
+		},
+		{
+			name: "empty prompt",
+			response: `<tool_use>
+<name>generate_image</name>
+<parameters>
+<prompt>  </prompt>
+</parameters>
+</tool_use>`,
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prompt, ok := parseImageToolCall(tt.response)
+			if ok != tt.wantOK {
+				t.Errorf("parseImageToolCall() ok = %v, want %v", ok, tt.wantOK)
+			}
+			if ok && prompt != tt.wantPrompt {
+				t.Errorf("parseImageToolCall() prompt = %q, want %q", prompt, tt.wantPrompt)
+			}
+		})
+	}
+}
+
+func TestBuildMessagesWithImageGen(t *testing.T) {
+	msgs := buildMessages(nil, nil, "draw a cat", "", "", true)
+	if !strings.Contains(msgs[0].Content, "generate_image") {
+		t.Error("expected generate_image tool in system prompt when hasImageGen is true")
+	}
+
+	msgs = buildMessages(nil, nil, "draw a cat", "", "", false)
+	if strings.Contains(msgs[0].Content, "generate_image") {
+		t.Error("expected no generate_image tool in system prompt when hasImageGen is false")
+	}
+}
+
+// mockImageProvider implements provider.ImageProvider for testing.
+type mockImageProvider struct {
+	data []byte
+	err  error
+}
+
+func (m *mockImageProvider) Name() string { return "mock" }
+func (m *mockImageProvider) Generate(_ context.Context, _ string) ([]byte, error) {
+	return m.data, m.err
+}
+
+func TestHandleImageGeneration(t *testing.T) {
+	imgData := []byte("fake-png-data")
+	imgProvider := &mockImageProvider{data: imgData}
+	h := hub.New()
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	// Provider returns a tool call.
+	toolResponse := `<tool_use>
+<name>generate_image</name>
+<parameters>
+<prompt>a cute cat</prompt>
+</parameters>
+</tool_use>`
+	mock := &mockProvider{name: "test", response: toolResponse}
+	l := NewLoop(h, mock, db, 50, 8000, 0, false, false, "", nil, imgProvider)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "draw a cat"})
+
+	// Should get "Generating image..." text message.
+	out := readOut(t, h)
+	if out.Text != "Generating image..." {
+		t.Errorf("expected placeholder, got %q", out.Text)
+	}
+
+	// Should get image on the Image channel.
+	select {
+	case img := <-h.Image:
+		if img.ChatID != 1 {
+			t.Errorf("expected ChatID 1, got %d", img.ChatID)
+		}
+		if string(img.Data) != string(imgData) {
+			t.Errorf("expected image data, got %q", img.Data)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for image message")
+	}
+}
+
+func TestHandleImageGenerationError(t *testing.T) {
+	imgProvider := &mockImageProvider{err: fmt.Errorf("content policy violation")}
+	h := hub.New()
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	toolResponse := `<tool_use>
+<name>generate_image</name>
+<parameters>
+<prompt>something inappropriate</prompt>
+</parameters>
+</tool_use>`
+	mock := &mockProvider{name: "test", response: toolResponse}
+	l := NewLoop(h, mock, db, 50, 8000, 0, false, false, "", nil, imgProvider)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "draw something"})
+
+	// First message: placeholder.
+	out := readOut(t, h)
+	if out.Text != "Generating image..." {
+		t.Errorf("expected placeholder, got %q", out.Text)
+	}
+
+	// Second message: error.
+	out = readOut(t, h)
+	if !strings.Contains(out.Text, "Failed to generate") {
+		t.Errorf("expected error message, got %q", out.Text)
+	}
+}
+
+func TestNoImageProviderSkipsToolCall(t *testing.T) {
+	toolResponse := `<tool_use>
+<name>generate_image</name>
+<parameters>
+<prompt>a cat</prompt>
+</parameters>
+</tool_use>`
+	mock := &mockProvider{name: "test", response: toolResponse}
+	// No image provider (nil).
+	l, h, _ := testLoop(t, mock)
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "draw a cat"})
+
+	// Without image provider, tool call is treated as normal text response.
+	out := readOut(t, h)
+	if out.Text != toolResponse {
+		t.Errorf("expected raw tool response forwarded, got %q", out.Text)
+	}
+}
+
 func TestArchivePrunesOldConversations(t *testing.T) {
 	h := hub.New()
 	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -1100,7 +1276,7 @@ func TestArchivePrunesOldConversations(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	// Create loop with maxArchived=2.
-	l := NewLoop(h, &mockProvider{name: "test", response: "ok"}, db, 50, 8000, 2, false, false, "", nil)
+	l := NewLoop(h, &mockProvider{name: "test", response: "ok"}, db, 50, 8000, 2, false, false, "", nil, nil)
 
 	// Archive 3 conversations via handleNew.
 	for i := 0; i < 3; i++ {
@@ -1112,5 +1288,87 @@ func TestArchivePrunesOldConversations(t *testing.T) {
 	convs, _ := db.ListArchived(1)
 	if len(convs) != 2 {
 		t.Errorf("expected 2 archives after pruning (limit=2), got %d", len(convs))
+	}
+}
+
+// mockStreamingProvider implements both LLMProvider and StreamingProvider.
+type mockStreamingProvider struct {
+	mockProvider
+}
+
+func (m *mockStreamingProvider) ChatStream(_ context.Context, _ []provider.Message, fn func(string)) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	// Simulate streaming by sending the response in chunks.
+	for _, ch := range m.response {
+		fn(string(ch))
+	}
+	return m.response, nil
+}
+
+func TestStreamingImageToolCallDeletesStreamedMessage(t *testing.T) {
+	imgData := []byte("fake-png-data")
+	imgProvider := &mockImageProvider{data: imgData}
+	h := hub.New()
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	toolResponse := `<tool_use>
+<name>generate_image</name>
+<parameters>
+<prompt>a cute cat</prompt>
+</parameters>
+</tool_use>`
+
+	sp := &mockStreamingProvider{mockProvider{name: "test", response: toolResponse}}
+	fb := provider.NewFallback([]provider.LLMProvider{sp}, 1, nil)
+	l := NewLoop(h, fb, db, 50, 8000, 0, false, true, "", nil, imgProvider)
+
+	// Use a trivial message (< 10 chars) so background memory extraction
+	// does not run and set sp.called via extProvider.Chat().
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "draw"})
+
+	// The streaming path should detect the tool call, delete the streamed
+	// message (empty text + Done), and trigger image generation.
+
+	// First: stream delete signal (empty text, Done=true).
+	select {
+	case su := <-h.Stream:
+		if su.Text != "" || !su.Done {
+			t.Errorf("expected delete signal (empty+done), got text=%q done=%v", su.Text, su.Done)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for stream delete signal")
+	}
+
+	// Then: "Generating image..." placeholder via Out.
+	out := readOut(t, h)
+	if out.Text != "Generating image..." {
+		t.Errorf("expected placeholder, got %q", out.Text)
+	}
+
+	// Then: image on the Image channel.
+	select {
+	case img := <-h.Image:
+		if img.ChatID != 1 {
+			t.Errorf("expected ChatID 1, got %d", img.ChatID)
+		}
+		if string(img.Data) != string(imgData) {
+			t.Errorf("expected image data, got %q", img.Data)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for image message")
+	}
+
+	// Wait for background goroutines (memory extraction, summarization).
+	l.Wait()
+
+	// Buffered Chat should NOT have been called (streaming succeeded).
+	if sp.called {
+		t.Error("buffered Chat should not be called when streaming succeeds")
 	}
 }
