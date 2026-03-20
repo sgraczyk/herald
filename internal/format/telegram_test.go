@@ -192,6 +192,15 @@ func TestTelegramHTML_MixedContent(t *testing.T) {
 	}
 }
 
+func TestTelegramHTML_NestedUnorderedList(t *testing.T) {
+	input := "- top\n  - nested"
+	got := TelegramHTML(input)
+	want := "• top\n\u00a0\u00a0◦ nested"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func BenchmarkTelegramHTML(b *testing.B) {
 	input := `# Weather Report
 

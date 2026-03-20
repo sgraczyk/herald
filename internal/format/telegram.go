@@ -134,8 +134,35 @@ func (r *telegramRenderer) renderList(_ util.BufWriter, _ []byte, _ ast.Node, _ 
 	return ast.WalkContinue, nil
 }
 
+// listDepth returns the nesting depth of a list item by counting ancestor
+// List nodes. Returns 0 for top-level, capped at 2 (three levels).
+func listDepth(node ast.Node) int {
+	depth := 0
+	for p := node.Parent(); p != nil; p = p.Parent() {
+		if p.Kind() == ast.KindList {
+			depth++
+		}
+	}
+	// depth counts the List ancestors; the item's own parent List = 1,
+	// so subtract 1 to get nesting level (0-based).
+	depth--
+	if depth < 0 {
+		depth = 0
+	}
+	if depth > 2 {
+		depth = 2
+	}
+	return depth
+}
+
+// bullets maps nesting depth to bullet character for unordered lists.
+var bullets = [3]string{"• ", "◦ ", "▪ "}
+
 func (r *telegramRenderer) renderListItem(w util.BufWriter, _ []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	if entering {
+		depth := listDepth(node)
+		indent := strings.Repeat("\u00a0\u00a0", depth)
+
 		list := node.Parent().(*ast.List)
 		if list.IsOrdered() {
 			index := 1
@@ -145,9 +172,9 @@ func (r *telegramRenderer) renderListItem(w util.BufWriter, _ []byte, node ast.N
 			for c := node.Parent().FirstChild(); c != nil && c != node; c = c.NextSibling() {
 				index++
 			}
-			_, _ = fmt.Fprintf(w, "%d. ", index)
+			_, _ = fmt.Fprintf(w, "%s%d. ", indent, index)
 		} else {
-			_, _ = w.WriteString("• ")
+			_, _ = w.WriteString(indent + bullets[depth])
 		}
 	}
 	return ast.WalkContinue, nil
