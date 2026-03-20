@@ -252,6 +252,19 @@ func TestTelegramHTML_TopLevelLooseList(t *testing.T) {
 	}
 }
 
+func TestTelegramHTML_LooseNestedList(t *testing.T) {
+	// Loose list: blank line between items makes goldmark wrap content in Paragraph nodes
+	input := "- top\n\n  - nested\n\n  - also nested"
+	got := TelegramHTML(input)
+	// Nested items should NOT get double-spaced \n\n between them
+	if strings.Contains(got, "nested\n\n") {
+		t.Errorf("nested items should not be double-spaced, got:\n%s", got)
+	}
+	if !strings.Contains(got, "◦ nested") {
+		t.Errorf("expected nested bullet, got:\n%s", got)
+	}
+}
+
 func BenchmarkTelegramHTML(b *testing.B) {
 	input := `# Weather Report
 

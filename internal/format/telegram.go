@@ -81,9 +81,14 @@ func (r *telegramRenderer) renderDocument(_ util.BufWriter, _ []byte, _ ast.Node
 	return ast.WalkContinue, nil
 }
 
-func (r *telegramRenderer) renderParagraph(w util.BufWriter, _ []byte, _ ast.Node, entering bool) (ast.WalkStatus, error) {
+func (r *telegramRenderer) renderParagraph(w util.BufWriter, _ []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	if !entering {
-		_, _ = w.WriteString("\n\n")
+		// Inside nested list items, use single newline to avoid awkward double-spacing.
+		if node.Parent() != nil && node.Parent().Kind() == ast.KindListItem && listDepth(node.Parent()) > 0 {
+			_, _ = w.WriteString("\n")
+		} else {
+			_, _ = w.WriteString("\n\n")
+		}
 	}
 	return ast.WalkContinue, nil
 }
