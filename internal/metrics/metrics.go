@@ -30,22 +30,38 @@ type Metrics struct {
 	providerErrors     map[string]int64
 	providerLatencyMs  map[string]int64 // total latency in ms
 	providerLatencyCnt map[string]int64 // number of latency observations
+
+	// Per-tool counters.
+	toolCalls      map[string]int64
+	toolErrors     map[string]int64
+	toolLatencyMs  map[string]int64 // total latency in ms
+	toolLatencyCnt map[string]int64 // number of latency observations
 }
 
-// New creates a Metrics instance with per-provider maps pre-initialized.
-func New(providerNames []string) *Metrics {
+// New creates a Metrics instance with per-provider and per-tool maps pre-initialized.
+func New(providerNames, toolNames []string) *Metrics {
 	m := &Metrics{
 		startedAt:          time.Now(),
 		providerCalls:      make(map[string]int64, len(providerNames)),
 		providerErrors:     make(map[string]int64, len(providerNames)),
 		providerLatencyMs:  make(map[string]int64, len(providerNames)),
 		providerLatencyCnt: make(map[string]int64, len(providerNames)),
+		toolCalls:          make(map[string]int64, len(toolNames)),
+		toolErrors:         make(map[string]int64, len(toolNames)),
+		toolLatencyMs:      make(map[string]int64, len(toolNames)),
+		toolLatencyCnt:     make(map[string]int64, len(toolNames)),
 	}
 	for _, name := range providerNames {
 		m.providerCalls[name] = 0
 		m.providerErrors[name] = 0
 		m.providerLatencyMs[name] = 0
 		m.providerLatencyCnt[name] = 0
+	}
+	for _, name := range toolNames {
+		m.toolCalls[name] = 0
+		m.toolErrors[name] = 0
+		m.toolLatencyMs[name] = 0
+		m.toolLatencyCnt[name] = 0
 	}
 	return m
 }
@@ -94,6 +110,29 @@ func (m *Metrics) ObserveLatency(name string, d time.Duration) {
 	m.mu.Unlock()
 }
 
+// IncToolCall increments the tool_calls counter for the named tool.
+func (m *Metrics) IncToolCall(name string) {
+	m.mu.Lock()
+	m.toolCalls[name]++
+	m.mu.Unlock()
+}
+
+// IncToolError increments the tool_errors counter for the named tool.
+func (m *Metrics) IncToolError(name string) {
+	m.mu.Lock()
+	m.toolErrors[name]++
+	m.mu.Unlock()
+}
+
+// ObserveToolLatency records a tool call duration for the named tool.
+func (m *Metrics) ObserveToolLatency(name string, d time.Duration) {
+	ms := d.Milliseconds()
+	m.mu.Lock()
+	m.toolLatencyMs[name] += ms
+	m.toolLatencyCnt[name]++
+	m.mu.Unlock()
+}
+
 // IncExtractionSuccess increments the memory_extraction_successes counter.
 func (m *Metrics) IncExtractionSuccess() {
 	m.mu.Lock()
@@ -129,6 +168,22 @@ func (m *Metrics) Snapshot() map[string]any {
 	for k, v := range m.providerLatencyCnt {
 		providerLatencyCnt[k] = v
 	}
+	toolCalls := make(map[string]int64, len(m.toolCalls))
+	for k, v := range m.toolCalls {
+		toolCalls[k] = v
+	}
+	toolErrors := make(map[string]int64, len(m.toolErrors))
+	for k, v := range m.toolErrors {
+		toolErrors[k] = v
+	}
+	toolLatencyMs := make(map[string]int64, len(m.toolLatencyMs))
+	for k, v := range m.toolLatencyMs {
+		toolLatencyMs[k] = v
+	}
+	toolLatencyCnt := make(map[string]int64, len(m.toolLatencyCnt))
+	for k, v := range m.toolLatencyCnt {
+		toolLatencyCnt[k] = v
+	}
 
 	return map[string]any{
 		"started_at":                  m.startedAt.UTC().Format(time.RFC3339),
@@ -142,6 +197,10 @@ func (m *Metrics) Snapshot() map[string]any {
 		"provider_latency_ms_count":   providerLatencyCnt,
 		"memory_extraction_successes":  m.memoryExtractions,
 		"memory_extraction_failures":  m.memoryExtractionFailures,
+		"tool_calls":                  toolCalls,
+		"tool_errors":                 toolErrors,
+		"tool_latency_ms_total":       toolLatencyMs,
+		"tool_latency_ms_count":       toolLatencyCnt,
 	}
 }
 
@@ -160,6 +219,10 @@ func (m *Metrics) LogSummary() {
 		slog.Any("provider_latency_ms_count", snap["provider_latency_ms_count"]),
 		slog.Any("memory_extraction_successes", snap["memory_extraction_successes"]),
 		slog.Any("memory_extraction_failures", snap["memory_extraction_failures"]),
+		slog.Any("tool_calls", snap["tool_calls"]),
+		slog.Any("tool_errors", snap["tool_errors"]),
+		slog.Any("tool_latency_ms_total", snap["tool_latency_ms_total"]),
+		slog.Any("tool_latency_ms_count", snap["tool_latency_ms_count"]),
 	)
 }
 

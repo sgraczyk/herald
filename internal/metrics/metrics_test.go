@@ -10,7 +10,7 @@ import (
 )
 
 func TestIncrement(t *testing.T) {
-	m := New([]string{"claude", "chutes"})
+	m := New([]string{"claude", "chutes"}, nil)
 
 	m.IncReceived()
 	m.IncReceived()
@@ -73,7 +73,7 @@ func TestIncrement(t *testing.T) {
 }
 
 func TestSnapshotContainsUptime(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	snap := m.Snapshot()
 
 	if _, ok := snap["started_at"]; !ok {
@@ -85,7 +85,7 @@ func TestSnapshotContainsUptime(t *testing.T) {
 }
 
 func TestSnapshotIsolation(t *testing.T) {
-	m := New([]string{"p1"})
+	m := New([]string{"p1"}, nil)
 	m.IncProviderCall("p1")
 
 	snap := m.Snapshot()
@@ -100,7 +100,7 @@ func TestSnapshotIsolation(t *testing.T) {
 }
 
 func TestConcurrentIncrements(t *testing.T) {
-	m := New([]string{"p1"})
+	m := New([]string{"p1"}, nil)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
@@ -133,7 +133,7 @@ func TestConcurrentIncrements(t *testing.T) {
 }
 
 func TestHandler(t *testing.T) {
-	m := New([]string{"claude"})
+	m := New([]string{"claude"}, nil)
 	m.IncReceived()
 	m.IncProviderCall("claude")
 
@@ -152,5 +152,31 @@ func TestHandler(t *testing.T) {
 
 	if got := result["messages_received"].(float64); got != 1 {
 		t.Errorf("messages_received = %v, want 1", got)
+	}
+}
+
+func TestToolMetrics(t *testing.T) {
+	m := New([]string{"claude"}, []string{"generate_image"})
+
+	m.IncToolCall("generate_image")
+	m.IncToolCall("generate_image")
+	m.IncToolError("generate_image")
+	m.ObserveToolLatency("generate_image", 500*time.Millisecond)
+
+	snap := m.Snapshot()
+
+	toolCalls := snap["tool_calls"].(map[string]int64)
+	if got := toolCalls["generate_image"]; got != 2 {
+		t.Errorf("tool_calls[generate_image] = %d, want 2", got)
+	}
+
+	toolErrors := snap["tool_errors"].(map[string]int64)
+	if got := toolErrors["generate_image"]; got != 1 {
+		t.Errorf("tool_errors[generate_image] = %d, want 1", got)
+	}
+
+	toolLatTotal := snap["tool_latency_ms_total"].(map[string]int64)
+	if got := toolLatTotal["generate_image"]; got != 500 {
+		t.Errorf("tool_latency_ms_total[generate_image] = %d, want 500", got)
 	}
 }

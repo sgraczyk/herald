@@ -108,7 +108,7 @@ func serve(configPath string) error {
 	for i, p := range providers {
 		providerNames[i] = p.Name()
 	}
-	m := metrics.New(providerNames)
+	m := metrics.New(providerNames, nil)
 
 	chain := provider.NewFallback(providers, *cfg.MaxRetries, m)
 
