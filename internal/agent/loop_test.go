@@ -1327,7 +1327,9 @@ func TestStreamingImageToolCallDeletesStreamedMessage(t *testing.T) {
 	fb := provider.NewFallback([]provider.LLMProvider{sp}, 1, nil)
 	l := NewLoop(h, fb, db, 50, 8000, 0, false, true, "", nil, imgProvider)
 
-	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "draw a cat"})
+	// Use a trivial message (< 10 chars) so background memory extraction
+	// does not run and set sp.called via extProvider.Chat().
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "draw"})
 
 	// The streaming path should detect the tool call, delete the streamed
 	// message (empty text + Done), and trigger image generation.
@@ -1360,6 +1362,9 @@ func TestStreamingImageToolCallDeletesStreamedMessage(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for image message")
 	}
+
+	// Wait for background goroutines (memory extraction, summarization).
+	l.Wait()
 
 	// Buffered Chat should NOT have been called (streaming succeeded).
 	if sp.called {
