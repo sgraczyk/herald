@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0](https://github.com/sgraczyk/herald/compare/v0.6.1...v0.7.0) (2026-03-20)
+
+
+### Features
+
+* **agent:** add LLM-triggered image generation ([#161](https://github.com/sgraczyk/herald/issues/161)) ([a83ace1](https://github.com/sgraczyk/herald/commit/a83ace13a00afa40caf350b2ebb4076d74630a62))
+* **document:** PDF text extraction and conversation integration ([#158](https://github.com/sgraczyk/herald/issues/158)) ([1c9d642](https://github.com/sgraczyk/herald/commit/1c9d6422af06f64256ffe6b374b92ca86218c8a0))
+* **format:** improve Telegram HTML output for common LLM patterns ([#162](https://github.com/sgraczyk/herald/issues/162)) ([a535c23](https://github.com/sgraczyk/herald/commit/a535c232d55e5c30f164601b457c60884de112ff))
+* **telegram:** message reactions for processing feedback ([#163](https://github.com/sgraczyk/herald/issues/163)) ([19cdf1c](https://github.com/sgraczyk/herald/commit/19cdf1c98e24048024100a2e90b74dc92e26ddee))
+
+
+### Bug Fixes
+
+* JSON parsing, EXIF orientation, and archive cleanup ([#160](https://github.com/sgraczyk/herald/issues/160)) ([8600b61](https://github.com/sgraczyk/herald/commit/8600b61e60c771fd756c1fc352d77c81899abb31))
+
 ## [0.6.1](https://github.com/sgraczyk/herald/compare/v0.6.0...v0.6.1) (2026-03-18)
 
 
