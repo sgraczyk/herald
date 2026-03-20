@@ -29,6 +29,9 @@ type Config struct {
 
 	// Raw field for env var resolution.
 	AllowedUserIDsEnv string `json:"allowed_user_ids_env"`
+
+	// presentKeys tracks which top-level JSON keys were explicitly set.
+	presentKeys map[string]bool `json:"-"`
 }
 
 // StatusMessages holds user-facing status and error message templates.
@@ -92,9 +95,20 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 		}
 	}
 
+	// Capture which top-level keys are present before unmarshalling
+	// into Config, so Validate can distinguish explicit values from defaults.
+	var rawKeys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawKeys); err != nil {
+		return nil, fmt.Errorf("parse config file: %w", err)
+	}
+
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config file: %w", err)
+	}
+	cfg.presentKeys = make(map[string]bool, len(rawKeys))
+	for k := range rawKeys {
+		cfg.presentKeys[k] = true
 	}
 
 	if cfg.HistoryLimit == 0 {
@@ -176,7 +190,7 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 
 // applyStatusMessageDefaults fills in missing status message fields with
 // English defaults. If status_messages is nil, a fully-populated default
-// struct is created. If any explicitly-set field is empty, validation fails.
+// struct is created. Empty fields are replaced with their defaults.
 func applyStatusMessageDefaults(cfg *Config) error {
 	defaults := StatusMessages{
 		ImageGenerating: "Generating image...",
@@ -217,6 +231,93 @@ func applyStatusMessageDefaults(cfg *Config) error {
 		}
 	}
 	return nil
+}
+
+// ValidationResult holds the output of config validation.
+type ValidationResult struct {
+	// Warnings lists feature-level issues and potential misconfigurations.
+	Warnings []string
+	// Defaults lists fields where built-in defaults were applied.
+	Defaults []string
+}
+
+// Validate inspects the loaded config and returns warnings about missing
+// feature configuration and info about fields where defaults were applied.
+func (c *Config) Validate() ValidationResult {
+	var r ValidationResult
+
+	presentKeys := c.presentKeys
+	if presentKeys == nil {
+		presentKeys = make(map[string]bool)
+	}
+
+	// --- Warnings ---
+
+	if len(c.Providers) == 0 {
+		r.Warnings = append(r.Warnings, "no providers configured — herald will not start")
+	}
+
+	if c.Telegram.Token == "" {
+		r.Warnings = append(r.Warnings,
+			fmt.Sprintf("telegram token not set (env var: %s) — herald will not start", c.Telegram.TokenEnv))
+	}
+
+	if len(c.ImageProviders) == 0 {
+		r.Warnings = append(r.Warnings,
+			"image_providers not configured — image generation will be unavailable")
+	}
+
+	for _, p := range c.Providers {
+		if p.Type == "openai" && p.APIKey == "" {
+			r.Warnings = append(r.Warnings,
+				fmt.Sprintf("provider %q: API key not set (env var: %s)", p.Name, p.APIKeyEnv))
+		}
+	}
+
+	if c.AllowedUserIDsEnv == "" {
+		r.Warnings = append(r.Warnings,
+			"allowed_user_ids_env not configured — no user whitelist set")
+	} else if len(c.AllowedUserIDs) == 0 {
+		r.Warnings = append(r.Warnings,
+			fmt.Sprintf("allowed user IDs env var %q is empty — all messages will be rejected",
+				c.AllowedUserIDsEnv))
+	}
+
+	if len(c.SystemPrompt) > 4000 {
+		r.Warnings = append(r.Warnings,
+			fmt.Sprintf("system_prompt is very long (%d chars), may consume significant context window",
+				len(c.SystemPrompt)))
+	}
+
+	// --- Defaults ---
+
+	type defaultField struct {
+		key   string
+		value any
+	}
+	fields := []defaultField{
+		{"history_limit", c.HistoryLimit},
+		{"history_token_budget", c.HistoryTokenBudget},
+		{"max_document_tokens", c.MaxDocumentTokens},
+	}
+	if c.MaxRetries != nil {
+		fields = append(fields, defaultField{"max_retries", *c.MaxRetries})
+	}
+	if c.MaxArchivedConversations != nil {
+		fields = append(fields, defaultField{"max_archived_conversations", *c.MaxArchivedConversations})
+	}
+	// Only report log_level as default if not overridden by LOG_LEVEL env var.
+	if os.Getenv("LOG_LEVEL") == "" {
+		fields = append(fields, defaultField{"log_level", c.LogLevel})
+	}
+	for _, f := range fields {
+		if !presentKeys[f.key] {
+			r.Defaults = append(r.Defaults,
+				fmt.Sprintf("using default %s: %v", f.key, f.value))
+		}
+	}
+
+	return r
 }
 
 func parseUserIDs(raw string) ([]int64, error) {

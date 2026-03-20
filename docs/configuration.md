@@ -245,6 +245,25 @@ Herald embeds `config.json.example` into the binary at build time via `//go:embe
 - **Reset to defaults:** Delete `config.json` and restart Herald.
 - **`--config` flag:** If the specified file doesn't exist, falls back to embedded defaults.
 
+## Validating Configuration
+
+Run `validate-config` to check a config file without starting the bot:
+
+```bash
+./herald validate-config
+./herald validate-config -c /etc/herald/config.json
+```
+
+Warnings (`WARNING:`) indicate settings that may prevent Herald from working correctly. Defaults (`INFO:`) report values Herald will supply automatically when a field is absent from the config file.
+
+Exit code is `1` when warnings are present, `0` otherwise. Suitable for CI or pre-deployment scripts:
+
+```bash
+./herald validate-config -c config.json && systemctl start herald
+```
+
+Herald also logs these same validation results at startup — warnings via `slog.Warn`, defaults via `slog.Info`. These do not block startup.
+
 ## Troubleshooting
 
 | Error | Cause | Fix |
@@ -259,6 +278,7 @@ Herald embeds `config.json.example` into the binary at build time via `//go:embe
 | `provider unreachable` | Network issue or API down | Wait for recovery; Herald retries per message |
 | `claude CLI not found on PATH` | Claude Code CLI not installed | Install Claude Code CLI (requires Node.js) |
 | `no providers configured` | Empty providers array | At least one provider must be in config |
+| `WARN` lines at startup | Config has missing or misconfigured fields | Run `herald validate-config` and address the reported fields |
 | Photos fail after update | Model lacks vision support | Confirm vision-capable model in config (look for `VL` suffix) |
 | Image generation times out | Chutes.ai slow or unreachable | Check network; 60s timeout is not configurable |
 | `API error (status 401)` from image provider | Invalid Chutes.ai API key | Update `CHUTES_API_KEY` in `.env`, restart |
