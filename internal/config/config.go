@@ -24,10 +24,24 @@ type Config struct {
 	Summarize          bool                 `json:"summarize,omitempty"`
 	Streaming          bool                 `json:"streaming,omitempty"`
 	SystemPrompt       string               `json:"system_prompt,omitempty"`
+	StatusMessages     *StatusMessages      `json:"status_messages,omitempty"`
 	AllowedUserIDs     []int64              `json:"-"`
 
 	// Raw field for env var resolution.
 	AllowedUserIDsEnv string `json:"allowed_user_ids_env"`
+}
+
+// StatusMessages holds user-facing status and error message templates.
+// When nil, English defaults are used.
+type StatusMessages struct {
+	ImageGenerating string `json:"image_generating,omitempty"`
+	ImageTimeout    string `json:"image_timeout,omitempty"`
+	ImageAuthError  string `json:"image_auth_error,omitempty"`
+	ImageGenericErr string `json:"image_generic_error,omitempty"`
+	ImageTooLarge   string `json:"image_too_large,omitempty"`
+	ProvTimeout     string `json:"provider_timeout,omitempty"`
+	ProvAuthError   string `json:"provider_auth_error,omitempty"`
+	ProvGenericErr  string `json:"provider_generic_error,omitempty"`
 }
 
 // TelegramConfig holds Telegram Bot API connection settings.
@@ -136,6 +150,10 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 		}
 	}
 
+	if err := applyStatusMessageDefaults(&cfg); err != nil {
+		return nil, err
+	}
+
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "info"
 	}
@@ -154,6 +172,51 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// applyStatusMessageDefaults fills in missing status message fields with
+// English defaults. If status_messages is nil, a fully-populated default
+// struct is created. If any explicitly-set field is empty, validation fails.
+func applyStatusMessageDefaults(cfg *Config) error {
+	defaults := StatusMessages{
+		ImageGenerating: "Generating image...",
+		ImageTimeout:    "Image generation took too long. Try a simpler prompt or try again shortly.",
+		ImageAuthError:  "Image service configuration issue. The admin has been notified.",
+		ImageGenericErr: "Failed to generate image. Please try again.",
+		ImageTooLarge:   "Generated image is too large for Telegram.",
+		ProvTimeout:     "Response took too long. Try a simpler question or try again shortly.",
+		ProvAuthError:   "Service configuration issue. The admin has been notified.",
+		ProvGenericErr:  "I'm temporarily unavailable. Please try again shortly.",
+	}
+
+	if cfg.StatusMessages == nil {
+		cfg.StatusMessages = &defaults
+		return nil
+	}
+
+	sm := cfg.StatusMessages
+	// Apply defaults for unset fields, reject empty strings for set fields.
+	type field struct {
+		val  *string
+		def  string
+		name string
+	}
+	fields := []field{
+		{&sm.ImageGenerating, defaults.ImageGenerating, "image_generating"},
+		{&sm.ImageTimeout, defaults.ImageTimeout, "image_timeout"},
+		{&sm.ImageAuthError, defaults.ImageAuthError, "image_auth_error"},
+		{&sm.ImageGenericErr, defaults.ImageGenericErr, "image_generic_error"},
+		{&sm.ImageTooLarge, defaults.ImageTooLarge, "image_too_large"},
+		{&sm.ProvTimeout, defaults.ProvTimeout, "provider_timeout"},
+		{&sm.ProvAuthError, defaults.ProvAuthError, "provider_auth_error"},
+		{&sm.ProvGenericErr, defaults.ProvGenericErr, "provider_generic_error"},
+	}
+	for _, f := range fields {
+		if *f.val == "" {
+			*f.val = f.def
+		}
+	}
+	return nil
 }
 
 func parseUserIDs(raw string) ([]int64, error) {

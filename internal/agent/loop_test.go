@@ -36,7 +36,7 @@ func testLoop(t *testing.T, p provider.LLMProvider) (*Loop, *hub.Hub, *store.DB)
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	l := NewLoop(h, p, db, 50, 8000, 0, false, false, "", nil, nil)
+	l := NewLoop(h, p, db, 50, 8000, 0, false, false, "", nil, nil, nil)
 	return l, h, db
 }
 
@@ -690,7 +690,7 @@ func TestSummarizationBeforePrune(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	// Create loop with summarize=true and limit=4.
-	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil, nil)
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil, nil, nil)
 
 	// Fill history to limit: 4 messages.
 	for i := 0; i < 4; i++ {
@@ -726,7 +726,7 @@ func TestSummarizationFailureDoesNotBreakFlow(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil, nil)
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil, nil, nil)
 
 	// Fill history to limit.
 	for i := 0; i < 4; i++ {
@@ -761,7 +761,7 @@ func TestSummaryInContext(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	l := NewLoop(h, cap, db, 50, 8000, 0, true, false, "", nil, nil)
+	l := NewLoop(h, cap, db, 50, 8000, 0, true, false, "", nil, nil, nil)
 	l.extProvider = cap
 
 	// Store a summary.
@@ -967,7 +967,7 @@ func TestSummarizationCompactsDocumentText(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	// Create loop with summarize=true and limit=4.
-	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil, nil)
+	l := NewLoop(h, &mockProvider{name: "test"}, db, 4, 8000, 0, true, false, "", nil, nil, nil)
 
 	// Fill history: a document system message + 3 regular messages = 4 total.
 	longDocText := "--- Document: invoice.pdf (2 pages) ---\n" + strings.Repeat("Invoice line item. ", 500) + "\n--- End of document ---"
@@ -1190,7 +1190,7 @@ func TestHandleImageGeneration(t *testing.T) {
 </parameters>
 </tool_use>`
 	mock := &mockProvider{name: "test", response: toolResponse}
-	l := NewLoop(h, mock, db, 50, 8000, 0, false, false, "", nil, imgProvider)
+	l := NewLoop(h, mock, db, 50, 8000, 0, false, false, "", nil, imgProvider, nil)
 
 	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "draw a cat"})
 
@@ -1230,7 +1230,7 @@ func TestHandleImageGenerationError(t *testing.T) {
 </parameters>
 </tool_use>`
 	mock := &mockProvider{name: "test", response: toolResponse}
-	l := NewLoop(h, mock, db, 50, 8000, 0, false, false, "", nil, imgProvider)
+	l := NewLoop(h, mock, db, 50, 8000, 0, false, false, "", nil, imgProvider, nil)
 
 	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "draw something"})
 
@@ -1276,7 +1276,7 @@ func TestArchivePrunesOldConversations(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	// Create loop with maxArchived=2.
-	l := NewLoop(h, &mockProvider{name: "test", response: "ok"}, db, 50, 8000, 2, false, false, "", nil, nil)
+	l := NewLoop(h, &mockProvider{name: "test", response: "ok"}, db, 50, 8000, 2, false, false, "", nil, nil, nil)
 
 	// Archive 3 conversations via handleNew.
 	for i := 0; i < 3; i++ {
@@ -1326,7 +1326,7 @@ func TestStreamingImageToolCallDeletesStreamedMessage(t *testing.T) {
 
 	sp := &mockStreamingProvider{mockProvider{name: "test", response: toolResponse}}
 	fb := provider.NewFallback([]provider.LLMProvider{sp}, 1, nil)
-	l := NewLoop(h, fb, db, 50, 8000, 0, false, true, "", nil, imgProvider)
+	l := NewLoop(h, fb, db, 50, 8000, 0, false, true, "", nil, imgProvider, nil)
 
 	// Use a trivial message (< 10 chars) so background memory extraction
 	// does not run and set sp.called via extProvider.Chat().

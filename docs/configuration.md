@@ -93,7 +93,36 @@ Then run `./herald`. Herald looks for `config.json` in the current directory by 
 | `image_providers[].base_url` | string | If type is chutes | -- | Chutes.ai base URL — slug-based subdomain (e.g. `https://chutes-z-image-turbo.chutes.ai`) or shared endpoint (`https://image.chutes.ai`) |
 | `image_providers[].model` | string | No | -- | Model identifier (e.g. `"FLUX.1-schnell"`). Required for shared-endpoint providers; omit for slug-based subdomains that serve a single model. |
 | `image_providers[].api_key_env` | string | If type is chutes | -- | Env var name holding the Chutes.ai API key |
+| `status_messages` | object | No | (English) | Custom status/error message templates (see [Status Messages](#status-messages)) |
 | `allowed_user_ids_env` | string | Yes | -- | Env var name holding comma-separated allowed Telegram user IDs |
+
+## Status Messages
+
+The optional `status_messages` field customizes user-facing status and error strings. When omitted, English defaults are used. Partial overrides are supported -- any field left out uses the English default.
+
+```json
+"status_messages": {
+  "image_generating": "Generowanie obrazu...",
+  "image_timeout": "Generowanie obrazu trwa zbyt dlugo.",
+  "image_auth_error": "Problem z konfiguracją uslugi obrazow.",
+  "image_generic_error": "Nie udalo sie wygenerowac obrazu.",
+  "image_too_large": "Wygenerowany obraz jest zbyt duzy dla Telegrama.",
+  "provider_timeout": "Odpowiedz trwa zbyt dlugo.",
+  "provider_auth_error": "Problem z konfiguracją uslugi.",
+  "provider_generic_error": "Jestem chwilowo niedostepny."
+}
+```
+
+| Field | Default |
+|-------|---------|
+| `image_generating` | `Generating image...` |
+| `image_timeout` | `Image generation took too long. Try a simpler prompt or try again shortly.` |
+| `image_auth_error` | `Image service configuration issue. The admin has been notified.` |
+| `image_generic_error` | `Failed to generate image. Please try again.` |
+| `image_too_large` | `Generated image is too large for Telegram.` |
+| `provider_timeout` | `Response took too long. Try a simpler question or try again shortly.` |
+| `provider_auth_error` | `Service configuration issue. The admin has been notified.` |
+| `provider_generic_error` | `I'm temporarily unavailable. Please try again shortly.` |
 
 ## Environment Variables
 

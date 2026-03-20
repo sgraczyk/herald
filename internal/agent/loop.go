@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sgraczyk/herald/internal/config"
 	"github.com/sgraczyk/herald/internal/hub"
 	"github.com/sgraczyk/herald/internal/metrics"
 	"github.com/sgraczyk/herald/internal/provider"
@@ -33,6 +34,7 @@ type Loop struct {
 	summarize                bool
 	streaming                bool
 	systemPrompt             string
+	statusMessages           *config.StatusMessages
 	startTime                time.Time
 	wg                       sync.WaitGroup
 }
@@ -47,7 +49,21 @@ type Loop struct {
 // maxArchived parameter limits how many archived conversations are kept per
 // chat (0 disables pruning, keeping all archives). The imgProvider parameter
 // is optional; when non-nil, the LLM is informed about the generate_image tool.
-func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget, maxArchived int, summarize, streaming bool, systemPrompt string, m *metrics.Metrics, imgProvider provider.ImageProvider) *Loop {
+// The sm parameter provides configurable status messages; when nil, defaults
+// from config loading are used.
+func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget, maxArchived int, summarize, streaming bool, systemPrompt string, m *metrics.Metrics, imgProvider provider.ImageProvider, sm *config.StatusMessages) *Loop {
+	if sm == nil {
+		sm = &config.StatusMessages{
+			ImageGenerating: "Generating image...",
+			ImageTimeout:    "Image generation took too long. Try a simpler prompt or try again shortly.",
+			ImageAuthError:  "Image service configuration issue. The admin has been notified.",
+			ImageGenericErr: "Failed to generate image. Please try again.",
+			ImageTooLarge:   "Generated image is too large for Telegram.",
+			ProvTimeout:     "Response took too long. Try a simpler question or try again shortly.",
+			ProvAuthError:   "Service configuration issue. The admin has been notified.",
+			ProvGenericErr:  "I'm temporarily unavailable. Please try again shortly.",
+		}
+	}
 	return &Loop{
 		hub:                      h,
 		provider:                 p,
@@ -61,6 +77,7 @@ func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, toke
 		summarize:                summarize,
 		streaming:                streaming,
 		systemPrompt:             systemPrompt,
+		statusMessages:           sm,
 		startTime:                time.Now(),
 	}
 }
@@ -440,11 +457,11 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		var errText string
 		switch {
 		case errors.Is(err, provider.ErrTimeout):
-			errText = "Response took too long. Try a simpler question or try again shortly."
+			errText = l.statusMessages.ProvTimeout
 		case errors.Is(err, provider.ErrAuthFailure):
-			errText = "Service configuration issue. The admin has been notified."
+			errText = l.statusMessages.ProvAuthError
 		default:
-			errText = "I'm temporarily unavailable. Please try again shortly."
+			errText = l.statusMessages.ProvGenericErr
 		}
 		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
 		return
@@ -620,7 +637,7 @@ func (l *Loop) handleImageGeneration(ctx context.Context, msg hub.InMessage, pro
 	slog.Info("image generation requested", slog.Int64("chat_id", msg.ChatID), slog.String("prompt", prompt))
 
 	// Send placeholder and re-signal typing for the long generation call.
-	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Generating image..."}
+	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: l.statusMessages.ImageGenerating}
 	l.hub.Typing <- msg.ChatID
 
 	// Generate image.
@@ -633,11 +650,11 @@ func (l *Loop) handleImageGeneration(ctx context.Context, msg hub.InMessage, pro
 		var errText string
 		switch {
 		case errors.Is(err, provider.ErrTimeout):
-			errText = "Image generation took too long. Try a simpler prompt or try again shortly."
+			errText = l.statusMessages.ImageTimeout
 		case errors.Is(err, provider.ErrAuthFailure):
-			errText = "Image service configuration issue. The admin has been notified."
+			errText = l.statusMessages.ImageAuthError
 		default:
-			errText = "Failed to generate image. Please try again."
+			errText = l.statusMessages.ImageGenericErr
 		}
 		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
 		return
@@ -645,7 +662,7 @@ func (l *Loop) handleImageGeneration(ctx context.Context, msg hub.InMessage, pro
 
 	if len(imgBytes) > maxImageSize {
 		slog.Error("generated image too large", slog.Int64("chat_id", msg.ChatID), slog.Int("size", len(imgBytes)))
-		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Generated image is too large for Telegram."}
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: l.statusMessages.ImageTooLarge}
 		return
 	}
 
