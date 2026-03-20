@@ -127,7 +127,7 @@ The document stays in conversation history. You can ask follow-up questions with
 
 ## Message Reactions
 
-Herald reacts to your messages with emoji to show processing status. An hourglass appears when your message is received, replaced by a checkmark when the response is complete or a cross-mark if something went wrong. This works automatically with text messages, photos, and documents. No configuration needed. In group chats where the bot lacks reaction permissions, reactions are silently skipped.
+Herald reacts to your messages with emoji to show processing status. An eyes reaction appears when your message is received, replaced by a thumbs up when the response is complete or a thumbs down if something went wrong. This works automatically with text messages, photos, and documents. No configuration needed. In group chats where the bot lacks reaction permissions, reactions are silently skipped.
 
 ## Streaming Responses
 

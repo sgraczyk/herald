@@ -21,6 +21,12 @@ import (
 	"github.com/sgraczyk/herald/internal/provider"
 )
 
+const (
+	reactionProcessing = "\U0001f440" // eyes
+	reactionSuccess    = "\U0001f44d" // thumbs up
+	reactionError      = "\U0001f44e" // thumbs down
+)
+
 // knownCommands is the set of commands handled by the agent loop.
 // Keep in sync with the switch in agent.Loop.handle (internal/agent/loop.go).
 // Unknown commands keep full original text so the LLM sees the user's intent.
@@ -135,7 +141,7 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 
-	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
+	a.setReaction(ctx, chatID, msg.ID, reactionProcessing)
 	a.mu.Lock()
 	a.reactionMsgs[chatID] = msg.ID
 	a.mu.Unlock()
@@ -145,7 +151,7 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 }
 
 func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Message, chatID, userID int64) {
-	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
+	a.setReaction(ctx, chatID, msg.ID, reactionProcessing)
 	a.mu.Lock()
 	a.reactionMsgs[chatID] = msg.ID
 	a.mu.Unlock()
@@ -201,7 +207,7 @@ func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Messa
 
 	if a.hub.Draining() {
 		slog.Debug("dropping photo message, hub is draining", slog.Int64("chat_id", chatID))
-		a.completeReaction(ctx, chatID, "\u274c")
+		a.completeReaction(ctx, chatID, reactionError)
 		return
 	}
 
@@ -218,7 +224,7 @@ func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Messa
 const maxDocumentSize = 10 << 20 // 10 MB
 
 func (a *Adapter) handleDocument(ctx context.Context, b *bot.Bot, msg *models.Message, chatID, userID int64) {
-	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
+	a.setReaction(ctx, chatID, msg.ID, reactionProcessing)
 	a.mu.Lock()
 	a.reactionMsgs[chatID] = msg.ID
 	a.mu.Unlock()
@@ -280,7 +286,7 @@ func (a *Adapter) handleDocument(ctx context.Context, b *bot.Bot, msg *models.Me
 
 	if a.hub.Draining() {
 		slog.Debug("dropping document message, hub is draining", slog.Int64("chat_id", chatID))
-		a.completeReaction(ctx, chatID, "\u274c")
+		a.completeReaction(ctx, chatID, reactionError)
 		return
 	}
 
@@ -313,7 +319,7 @@ func documentErrorMessage(err error) string {
 }
 
 func (a *Adapter) sendError(ctx context.Context, chatID int64, text string) {
-	a.completeReaction(ctx, chatID, "\u274c")
+	a.completeReaction(ctx, chatID, reactionError)
 
 	_, err := a.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
@@ -379,9 +385,9 @@ func (a *Adapter) dispatchOut(ctx context.Context) {
 				}
 			}
 			if sendFailed {
-				a.completeReaction(ctx, msg.ChatID, "\u274c")
+				a.completeReaction(ctx, msg.ChatID, reactionError)
 			} else {
-				a.completeReaction(ctx, msg.ChatID, "\u2705")
+				a.completeReaction(ctx, msg.ChatID, reactionSuccess)
 			}
 		}
 	}
@@ -412,7 +418,7 @@ func (a *Adapter) dispatchStream(ctx context.Context) {
 
 			// Error case: empty text + done means delete in-progress message.
 			if update.Text == "" && update.Done {
-				a.completeReaction(ctx, update.ChatID, "\u274c")
+				a.completeReaction(ctx, update.ChatID, reactionError)
 				if exists {
 					_, err := a.bot.DeleteMessage(ctx, &bot.DeleteMessageParams{
 						ChatID:    update.ChatID,
@@ -500,7 +506,7 @@ func (a *Adapter) dispatchStream(ctx context.Context) {
 				delete(a.streamMsgs, update.ChatID)
 				a.mu.Unlock()
 
-				a.completeReaction(ctx, update.ChatID, "\u2705")
+				a.completeReaction(ctx, update.ChatID, reactionSuccess)
 			}
 		}
 	}
@@ -520,9 +526,9 @@ func (a *Adapter) dispatchImage(ctx context.Context) {
 			})
 			if err != nil {
 				slog.Error("send photo failed", slog.Int64("chat_id", img.ChatID), slog.String("error", err.Error()))
-				a.completeReaction(ctx, img.ChatID, "\u274c")
+				a.completeReaction(ctx, img.ChatID, reactionError)
 			} else {
-				a.completeReaction(ctx, img.ChatID, "\u2705")
+				a.completeReaction(ctx, img.ChatID, reactionSuccess)
 			}
 		}
 	}

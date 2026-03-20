@@ -358,7 +358,7 @@ func TestCompleteReactionClearsMap(t *testing.T) {
 	a.reactionMsgs[42] = 77
 	a.mu.Unlock()
 
-	a.completeReaction(context.Background(), 42, "\u2705")
+	a.completeReaction(context.Background(), 42, reactionSuccess)
 
 	a.mu.Lock()
 	_, ok := a.reactionMsgs[42]
@@ -373,7 +373,7 @@ func TestCompleteReactionNoOpWhenNoEntry(t *testing.T) {
 	a, _ := testAdapter(t, map[int64]bool{111: true})
 
 	// Should not panic when no entry exists.
-	a.completeReaction(context.Background(), 42, "\u2705")
+	a.completeReaction(context.Background(), 42, reactionSuccess)
 
 	a.mu.Lock()
 	_, ok := a.reactionMsgs[42]
@@ -391,7 +391,7 @@ func TestCompleteReactionCrossMarkClearsMap(t *testing.T) {
 	a.reactionMsgs[42] = 77
 	a.mu.Unlock()
 
-	a.completeReaction(context.Background(), 42, "\u274c")
+	a.completeReaction(context.Background(), 42, reactionError)
 
 	a.mu.Lock()
 	_, ok := a.reactionMsgs[42]
