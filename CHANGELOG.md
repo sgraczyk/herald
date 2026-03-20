@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/sgraczyk/herald/compare/v0.7.0...v0.7.1) (2026-03-20)
+
+
+### Bug Fixes
+
+* **provider:** correct Chutes.ai image generation URL and body format ([#167](https://github.com/sgraczyk/herald/issues/167)) ([516e487](https://github.com/sgraczyk/herald/commit/516e48742399ef4b6d2e2b0d9ca1368cc4402f51))
+
 ## [0.7.0](https://github.com/sgraczyk/herald/compare/v0.6.1...v0.7.0) (2026-03-20)
 
 
