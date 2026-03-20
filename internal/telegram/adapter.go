@@ -372,6 +372,7 @@ func (a *Adapter) dispatchOut(ctx context.Context) {
 					}
 				}
 			}
+			a.completeReaction(ctx, msg.ChatID, "\u2705")
 		}
 	}
 }
@@ -487,6 +488,8 @@ func (a *Adapter) dispatchStream(ctx context.Context) {
 				a.mu.Lock()
 				delete(a.streamMsgs, update.ChatID)
 				a.mu.Unlock()
+
+				a.completeReaction(ctx, update.ChatID, "\u2705")
 			}
 		}
 	}
@@ -506,6 +509,9 @@ func (a *Adapter) dispatchImage(ctx context.Context) {
 			})
 			if err != nil {
 				slog.Error("send photo failed", slog.Int64("chat_id", img.ChatID), slog.String("error", err.Error()))
+				a.completeReaction(ctx, img.ChatID, "\u274c")
+			} else {
+				a.completeReaction(ctx, img.ChatID, "\u2705")
 			}
 		}
 	}

@@ -351,6 +351,57 @@ func TestHandleUpdateNoReactionForUnauthorized(t *testing.T) {
 	}
 }
 
+func TestCompleteReactionClearsMap(t *testing.T) {
+	a, _ := testAdapter(t, map[int64]bool{111: true})
+
+	a.mu.Lock()
+	a.reactionMsgs[42] = 77
+	a.mu.Unlock()
+
+	a.completeReaction(context.Background(), 42, "\u2705")
+
+	a.mu.Lock()
+	_, ok := a.reactionMsgs[42]
+	a.mu.Unlock()
+
+	if ok {
+		t.Fatal("expected reactionMsgs entry to be cleared after completeReaction")
+	}
+}
+
+func TestCompleteReactionNoOpWhenNoEntry(t *testing.T) {
+	a, _ := testAdapter(t, map[int64]bool{111: true})
+
+	// Should not panic when no entry exists.
+	a.completeReaction(context.Background(), 42, "\u2705")
+
+	a.mu.Lock()
+	_, ok := a.reactionMsgs[42]
+	a.mu.Unlock()
+
+	if ok {
+		t.Fatal("expected no reactionMsgs entry")
+	}
+}
+
+func TestCompleteReactionCrossMarkClearsMap(t *testing.T) {
+	a, _ := testAdapter(t, map[int64]bool{111: true})
+
+	a.mu.Lock()
+	a.reactionMsgs[42] = 77
+	a.mu.Unlock()
+
+	a.completeReaction(context.Background(), 42, "\u274c")
+
+	a.mu.Lock()
+	_, ok := a.reactionMsgs[42]
+	a.mu.Unlock()
+
+	if ok {
+		t.Fatal("expected reactionMsgs entry to be cleared after cross-mark completeReaction")
+	}
+}
+
 func TestHandleUpdateCommandParsing(t *testing.T) {
 	a, h := testAdapter(t, map[int64]bool{111: true})
 
