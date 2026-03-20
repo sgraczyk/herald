@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -421,8 +422,25 @@ func TestValidate_MinimalConfig(t *testing.T) {
 		t.Errorf("expected warning about image_providers, got: %v", result.Warnings)
 	}
 
-	if len(result.Defaults) != 6 {
-		t.Errorf("len(Defaults) = %d, want 6; got: %v", len(result.Defaults), result.Defaults)
+	wantDefaults := []string{
+		"history_limit",
+		"history_token_budget",
+		"max_document_tokens",
+		"max_retries",
+		"max_archived_conversations",
+		"log_level",
+	}
+	for _, key := range wantDefaults {
+		found := false
+		for _, d := range result.Defaults {
+			if strings.Contains(d, key) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected default for %q, got: %v", key, result.Defaults)
+		}
 	}
 }
 
@@ -566,5 +584,76 @@ func TestValidate_AllowedUserIDsEmptyEnv(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected warning about empty allowed user IDs env var, got: %v", result.Warnings)
+	}
+}
+
+func TestValidate_AllowedUserIDsExplicitEmptyString(t *testing.T) {
+	t.Setenv("TEST_TG_TOKEN", "tok123")
+
+	cfg, err := Load(writeConfig(t, `{
+		"telegram": {"token_env": "TEST_TG_TOKEN"},
+		"providers": [{"name": "c", "type": "claude-cli"}],
+		"allowed_user_ids_env": ""
+	}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	result := cfg.Validate()
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "allowed_user_ids_env not configured") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about unconfigured allowed_user_ids_env, got: %v", result.Warnings)
+	}
+}
+
+func TestValidate_LongSystemPrompt(t *testing.T) {
+	t.Setenv("TEST_TG_TOKEN", "tok123")
+
+	longPrompt := strings.Repeat("x", 4001)
+	jsonStr := fmt.Sprintf(`{
+		"telegram": {"token_env": "TEST_TG_TOKEN"},
+		"providers": [{"name": "c", "type": "claude-cli"}],
+		"system_prompt": %q
+	}`, longPrompt)
+
+	cfg, err := Load(writeConfig(t, jsonStr))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	result := cfg.Validate()
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "system_prompt") && strings.Contains(w, "very long") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about long system_prompt, got: %v", result.Warnings)
+	}
+}
+
+func TestValidate_LogLevelEnvOverrideNotDefault(t *testing.T) {
+	t.Setenv("TEST_TG_TOKEN", "tok123")
+	t.Setenv("LOG_LEVEL", "warn")
+
+	cfg, err := Load(writeConfig(t, `{
+		"telegram": {"token_env": "TEST_TG_TOKEN"},
+		"providers": [{"name": "c", "type": "claude-cli"}]
+	}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	result := cfg.Validate()
+	for _, d := range result.Defaults {
+		if strings.Contains(d, "log_level") {
+			t.Errorf("log_level should not appear in defaults when LOG_LEVEL env var is set, got: %v", result.Defaults)
+		}
 	}
 }

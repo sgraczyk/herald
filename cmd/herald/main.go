@@ -81,19 +81,8 @@ func serve(configPath string) error {
 
 	initLogging(cfg.LogLevel)
 
-	// Log config validation results.
-	vr := cfg.Validate()
-	for _, w := range vr.Warnings {
-		slog.Warn(w)
-	}
-	for _, d := range vr.Defaults {
-		slog.Info(d)
-	}
-
 	if cfg.SystemPrompt == "" {
 		slog.Info("system_prompt not set, using default")
-	} else if len(cfg.SystemPrompt) > 4000 {
-		slog.Warn("system_prompt is very long, may consume significant context window", slog.Int("length", len(cfg.SystemPrompt)))
 	}
 
 	if cfg.Telegram.Token == "" {
@@ -113,6 +102,16 @@ func serve(configPath string) error {
 		return fmt.Errorf("no providers configured")
 	}
 	provider.ValidateProviders(context.Background(), providers)
+
+	// Log non-fatal config validation results (after fatal checks to avoid
+	// duplicate messaging for conditions that are already hard errors).
+	vr := cfg.Validate()
+	for _, w := range vr.Warnings {
+		slog.Warn(w)
+	}
+	for _, d := range vr.Defaults {
+		slog.Info(d)
+	}
 
 	providerNames := make([]string, len(providers))
 	for i, p := range providers {

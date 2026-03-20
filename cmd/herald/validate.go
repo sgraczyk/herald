@@ -34,6 +34,10 @@ func newValidateCmd() *cobra.Command {
 				fmt.Fprintln(os.Stderr, "config OK — no warnings, no defaults applied")
 			}
 
+			if len(result.Warnings) > 0 {
+				return fmt.Errorf("config has %d warning(s)", len(result.Warnings))
+			}
+
 			return nil
 		},
 	}

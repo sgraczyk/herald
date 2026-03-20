@@ -190,7 +190,7 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 
 // applyStatusMessageDefaults fills in missing status message fields with
 // English defaults. If status_messages is nil, a fully-populated default
-// struct is created. If any explicitly-set field is empty, validation fails.
+// struct is created. Empty fields are replaced with their defaults.
 func applyStatusMessageDefaults(cfg *Config) error {
 	defaults := StatusMessages{
 		ImageGenerating: "Generating image...",
@@ -235,8 +235,10 @@ func applyStatusMessageDefaults(cfg *Config) error {
 
 // ValidationResult holds the output of config validation.
 type ValidationResult struct {
-	Warnings []string // feature-level issues, potential misconfigurations
-	Defaults []string // fields where defaults were applied
+	// Warnings lists feature-level issues and potential misconfigurations.
+	Warnings []string
+	// Defaults lists fields where built-in defaults were applied.
+	Defaults []string
 }
 
 // Validate inspects the loaded config and returns warnings about missing
@@ -244,8 +246,9 @@ type ValidationResult struct {
 func (c *Config) Validate() ValidationResult {
 	var r ValidationResult
 
-	if c.presentKeys == nil {
-		c.presentKeys = make(map[string]bool)
+	presentKeys := c.presentKeys
+	if presentKeys == nil {
+		presentKeys = make(map[string]bool)
 	}
 
 	// --- Warnings ---
@@ -272,14 +275,18 @@ func (c *Config) Validate() ValidationResult {
 	}
 
 	if c.AllowedUserIDsEnv == "" {
-		if !c.presentKeys["allowed_user_ids_env"] {
-			r.Warnings = append(r.Warnings,
-				"allowed_user_ids_env not configured — no user whitelist set")
-		}
+		r.Warnings = append(r.Warnings,
+			"allowed_user_ids_env not configured — no user whitelist set")
 	} else if len(c.AllowedUserIDs) == 0 {
 		r.Warnings = append(r.Warnings,
 			fmt.Sprintf("allowed user IDs env var %q is empty — all messages will be rejected",
 				c.AllowedUserIDsEnv))
+	}
+
+	if len(c.SystemPrompt) > 4000 {
+		r.Warnings = append(r.Warnings,
+			fmt.Sprintf("system_prompt is very long (%d chars), may consume significant context window",
+				len(c.SystemPrompt)))
 	}
 
 	// --- Defaults ---
@@ -292,12 +299,19 @@ func (c *Config) Validate() ValidationResult {
 		{"history_limit", c.HistoryLimit},
 		{"history_token_budget", c.HistoryTokenBudget},
 		{"max_document_tokens", c.MaxDocumentTokens},
-		{"max_retries", *c.MaxRetries},
-		{"max_archived_conversations", *c.MaxArchivedConversations},
-		{"log_level", c.LogLevel},
+	}
+	if c.MaxRetries != nil {
+		fields = append(fields, defaultField{"max_retries", *c.MaxRetries})
+	}
+	if c.MaxArchivedConversations != nil {
+		fields = append(fields, defaultField{"max_archived_conversations", *c.MaxArchivedConversations})
+	}
+	// Only report log_level as default if not overridden by LOG_LEVEL env var.
+	if os.Getenv("LOG_LEVEL") == "" {
+		fields = append(fields, defaultField{"log_level", c.LogLevel})
 	}
 	for _, f := range fields {
-		if !c.presentKeys[f.key] {
+		if !presentKeys[f.key] {
 			r.Defaults = append(r.Defaults,
 				fmt.Sprintf("using default %s: %v", f.key, f.value))
 		}
