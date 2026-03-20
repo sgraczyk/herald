@@ -114,9 +114,9 @@ func serve(configPath string) error {
 
 	// Build image provider.
 	var imgProvider provider.ImageProvider
-	if cfg.ImageProvider != nil && cfg.ImageProvider.Type == "openai" && cfg.ImageProvider.APIKey != "" {
-		imgProvider = provider.NewDallE(cfg.ImageProvider.APIKey)
-		slog.Info("image generation enabled", slog.String("type", "openai"))
+	if cfg.ImageProvider != nil && cfg.ImageProvider.Type == "chutes" && cfg.ImageProvider.APIKey != "" && cfg.ImageProvider.BaseURL != "" {
+		imgProvider = provider.NewChutes(cfg.ImageProvider.BaseURL, cfg.ImageProvider.APIKey)
+		slog.Info("image generation enabled", slog.String("type", "chutes"))
 	}
 
 	// Create hub.

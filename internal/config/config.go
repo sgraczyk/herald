@@ -48,7 +48,8 @@ type ProviderConfig struct {
 
 // ImageProviderConfig describes the image generation provider.
 type ImageProviderConfig struct {
-	Type      string `json:"type"`        // "openai" or "none"
+	Type      string `json:"type"`        // "chutes" or "none"
+	BaseURL   string `json:"base_url,omitempty"`
 	APIKeyEnv string `json:"api_key_env,omitempty"`
 	APIKey    string `json:"-"`
 }
