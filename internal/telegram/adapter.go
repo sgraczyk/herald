@@ -145,6 +145,11 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 }
 
 func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Message, chatID, userID int64) {
+	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
+	a.mu.Lock()
+	a.reactionMsgs[chatID] = msg.ID
+	a.mu.Unlock()
+
 	// Select largest photo (last element in Telegram's PhotoSize array).
 	photo := msg.Photo[len(msg.Photo)-1]
 
@@ -196,13 +201,9 @@ func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Messa
 
 	if a.hub.Draining() {
 		slog.Debug("dropping photo message, hub is draining", slog.Int64("chat_id", chatID))
+		a.completeReaction(ctx, chatID, "\u274c")
 		return
 	}
-
-	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
-	a.mu.Lock()
-	a.reactionMsgs[chatID] = msg.ID
-	a.mu.Unlock()
 
 	a.hub.In <- hub.InMessage{
 		ChatID: chatID,
@@ -217,6 +218,11 @@ func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Messa
 const maxDocumentSize = 10 << 20 // 10 MB
 
 func (a *Adapter) handleDocument(ctx context.Context, b *bot.Bot, msg *models.Message, chatID, userID int64) {
+	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
+	a.mu.Lock()
+	a.reactionMsgs[chatID] = msg.ID
+	a.mu.Unlock()
+
 	if msg.Document.FileSize > maxDocumentSize {
 		a.sendError(ctx, chatID, "PDF too large (max 10 MB).")
 		return
@@ -274,13 +280,9 @@ func (a *Adapter) handleDocument(ctx context.Context, b *bot.Bot, msg *models.Me
 
 	if a.hub.Draining() {
 		slog.Debug("dropping document message, hub is draining", slog.Int64("chat_id", chatID))
+		a.completeReaction(ctx, chatID, "\u274c")
 		return
 	}
-
-	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
-	a.mu.Lock()
-	a.reactionMsgs[chatID] = msg.ID
-	a.mu.Unlock()
 
 	a.hub.In <- hub.InMessage{
 		ChatID: chatID,
@@ -357,6 +359,7 @@ func (a *Adapter) dispatchOut(ctx context.Context) {
 			a.stopTyping(msg.ChatID)
 
 			formatted := format.TelegramHTML(msg.Text)
+			sendFailed := false
 			for _, chunk := range format.Split(formatted, 4096) {
 				_, err := a.bot.SendMessage(ctx, &bot.SendMessageParams{
 					ChatID:    msg.ChatID,
@@ -371,10 +374,15 @@ func (a *Adapter) dispatchOut(ctx context.Context) {
 					})
 					if err != nil {
 						slog.Error("send message failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
+						sendFailed = true
 					}
 				}
 			}
-			a.completeReaction(ctx, msg.ChatID, "\u2705")
+			if sendFailed {
+				a.completeReaction(ctx, msg.ChatID, "\u274c")
+			} else {
+				a.completeReaction(ctx, msg.ChatID, "\u2705")
+			}
 		}
 	}
 }
