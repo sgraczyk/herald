@@ -12,7 +12,7 @@ import (
 type Config struct {
 	Telegram           TelegramConfig      `json:"telegram"`
 	Providers          []ProviderConfig    `json:"providers"`
-	ImageProvider      *ImageProviderConfig `json:"image_provider,omitempty"`
+	ImageProviders []ImageProviderConfig `json:"image_providers,omitempty"`
 	Store              StoreConfig          `json:"store"`
 	HTTPPort           int                  `json:"http_port,omitempty"`
 	HistoryLimit       int                  `json:"history_limit"`
@@ -46,9 +46,10 @@ type ProviderConfig struct {
 	APIKey    string `json:"-"`
 }
 
-// ImageProviderConfig describes the image generation provider.
+// ImageProviderConfig describes an image generation provider entry.
 type ImageProviderConfig struct {
-	Type      string `json:"type"`        // "chutes" or "none"
+	Name      string `json:"name"`
+	Type      string `json:"type"` // "chutes" or "none"
 	BaseURL   string `json:"base_url,omitempty"`
 	APIKeyEnv string `json:"api_key_env,omitempty"`
 	APIKey    string `json:"-"`
@@ -122,11 +123,16 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 		}
 	}
 
-	if cfg.ImageProvider != nil && cfg.ImageProvider.APIKeyEnv != "" {
-		cfg.ImageProvider.APIKey = os.Getenv(cfg.ImageProvider.APIKeyEnv)
-	}
-	if cfg.ImageProvider != nil && cfg.ImageProvider.Type == "chutes" && cfg.ImageProvider.BaseURL == "" {
-		return nil, fmt.Errorf("image_provider.base_url is required when type is \"chutes\"")
+	for i, ip := range cfg.ImageProviders {
+		if ip.Name == "" {
+			return nil, fmt.Errorf("image_providers[%d].name is required", i)
+		}
+		if ip.Type == "chutes" && ip.BaseURL == "" {
+			return nil, fmt.Errorf("image_providers[%d].base_url is required when type is \"chutes\"", i)
+		}
+		if ip.APIKeyEnv != "" {
+			cfg.ImageProviders[i].APIKey = os.Getenv(ip.APIKeyEnv)
+		}
 	}
 
 	if cfg.LogLevel == "" {
