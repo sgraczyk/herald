@@ -93,7 +93,7 @@ With streaming enabled, if the LLM decides to generate an image mid-stream, Hera
 - **Chutes.ai only.** Other providers can be added by implementing the `ImageProvider` interface.
 - **Fixed size.** All generated images are 1024x1024.
 - **20 MB upload limit.** Images exceeding Telegram's limit are rejected.
-- **60-second timeout.** Image generation requests time out after 60 seconds.
+- **90-second timeout.** Image generation requests time out after 90 seconds.
 - **Paid API.** Image generation incurs costs on your Chutes.ai account.
 
 ## PDF Document Support
