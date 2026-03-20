@@ -87,8 +87,9 @@ Then run `./herald`. Herald looks for `config.json` in the current directory by 
 | `max_retries` | integer | No | `1` | Retries per provider for transient errors (timeouts, server errors). Set to `0` to disable. |
 | `log_level` | string | No | `"info"` | Logging verbosity (see [Logging](logging.md)) |
 | `system_prompt` | string | No | (built-in) | Custom system prompt sent to the LLM |
-| `image_provider.type` | string | No | `"none"` | Image generation backend: `"openai"` (DALL-E 3) or `"none"` (disabled) |
-| `image_provider.api_key_env` | string | If type is openai | -- | Env var name holding the OpenAI API key |
+| `image_provider.type` | string | No | `"none"` | Image generation backend: `"chutes"` (Chutes.ai) or `"none"` (disabled) |
+| `image_provider.base_url` | string | If type is chutes | -- | Chute endpoint URL (e.g. `https://chutes.ai/app/chute/<id>`) |
+| `image_provider.api_key_env` | string | If type is chutes | -- | Env var name holding the Chutes.ai API key |
 | `allowed_user_ids_env` | string | Yes | -- | Env var name holding comma-separated allowed Telegram user IDs |
 
 ## Environment Variables
@@ -99,8 +100,7 @@ Secrets are never stored in the config file. The config contains env var **names
 |----------|----------|---------|
 | `TELEGRAM_TOKEN` | Yes | Telegram bot token from BotFather |
 | `ALLOWED_USER_IDS` | Yes | Comma-separated Telegram user IDs (spaces around commas are fine) |
-| `CHUTES_API_KEY` | If using openai provider | API key for the OpenAI-compatible provider |
-| `OPENAI_API_KEY` | If using image_provider | OpenAI API key for DALL-E 3 image generation |
+| `CHUTES_API_KEY` | If using openai provider | API key for the OpenAI-compatible provider (also used for image generation) |
 | `CLAUDE_TOKEN_EXPIRES` | No | Expiry date shown in `/health` endpoint |
 | `LOG_LEVEL` | No | Overrides `log_level` from config (useful for temporary debugging) |
 
@@ -148,12 +148,13 @@ Works with any OpenAI chat completions API: Chutes.ai, Groq, OpenRouter, local O
 
 ### Image Provider
 
-Herald can generate images using DALL-E 3. This is separate from the chat providers -- it only handles image generation requests.
+Herald can generate images using Chutes.ai (e.g. FLUX.1-schnell). This is separate from the chat providers -- it only handles image generation requests.
 
 ```json
 "image_provider": {
-  "type": "openai",
-  "api_key_env": "OPENAI_API_KEY"
+  "type": "chutes",
+  "base_url": "https://chutes.ai/app/chute/a292d47b-8f0f-5662-b2b0-6f0ebba48031",
+  "api_key_env": "CHUTES_API_KEY"
 }
 ```
 
@@ -217,5 +218,5 @@ Herald embeds `config.json.example` into the binary at build time via `//go:embe
 | `claude CLI not found on PATH` | Claude Code CLI not installed | Install Claude Code CLI (requires Node.js) |
 | `no providers configured` | Empty providers array | At least one provider must be in config |
 | Photos fail after update | Model lacks vision support | Confirm vision-capable model in config (look for `VL` suffix) |
-| Image generation times out | DALL-E API slow or unreachable | Check network; 60s timeout is not configurable |
-| `API error (status 401)` from image provider | Invalid OpenAI API key | Update `OPENAI_API_KEY` in `.env`, restart |
+| Image generation times out | Chutes.ai slow or unreachable | Check network; 60s timeout is not configurable |
+| `API error (status 401)` from image provider | Invalid Chutes.ai API key | Update `CHUTES_API_KEY` in `.env`, restart |
