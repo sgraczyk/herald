@@ -218,8 +218,9 @@ type openaiRequest struct {
 }
 
 type openaiMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"`
+	Role       string `json:"role"`
+	Content    any    `json:"content"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
 }
 
 // buildOpenAIContent returns a plain string for text-only messages,
@@ -253,6 +254,163 @@ type openaiResponse struct {
 
 type openaiChoice struct {
 	Message openaiMessage `json:"message"`
+}
+
+// ChatWithTools sends a conversation with tool definitions to the OpenAI-compatible
+// endpoint. If the model responds with tool calls, they are returned in
+// ChatResponse.ToolCalls. Otherwise, the text reply is in ChatResponse.Text.
+func (o *OpenAI) ChatWithTools(ctx context.Context, messages []Message, opts ChatOptions) (*ChatResponse, error) {
+	reqBody := openaiToolRequest{
+		Model:    o.model,
+		Messages: make([]openaiMessage, len(messages)),
+	}
+	for i, m := range messages {
+		msg := openaiMessage{
+			Role:    m.Role,
+			Content: buildOpenAIContent(m),
+		}
+		if m.Role == "tool" && len(m.ToolResults) > 0 {
+			msg.ToolCallID = m.ToolResults[0].CallID
+			msg.Content = m.ToolResults[0].Result
+		}
+		reqBody.Messages[i] = msg
+	}
+	for _, td := range opts.Tools {
+		props := make(map[string]map[string]string, len(td.Parameters))
+		required := make([]string, 0)
+		for _, p := range td.Parameters {
+			props[p.Name] = map[string]string{
+				"type":        p.Type,
+				"description": p.Description,
+			}
+			if p.Required {
+				required = append(required, p.Name)
+			}
+		}
+		reqBody.Tools = append(reqBody.Tools, openaiTool{
+			Type: "function",
+			Function: openaiFunction{
+				Name:        td.Name,
+				Description: td.Description,
+				Parameters: openaiParameters{
+					Type:       "object",
+					Properties: props,
+					Required:   required,
+				},
+			},
+		})
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	url := o.baseURL + "/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+o.apiKey)
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		if isTimeoutError(ctx, err) {
+			return nil, fmt.Errorf("send request: %w: %w", ErrTimeout, err)
+		}
+		return nil, fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if len(respBody) > maxResponseSize {
+		return nil, fmt.Errorf("response body exceeds %d bytes limit", maxResponseSize)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return nil, fmt.Errorf("API error (status %d): %s: %w", resp.StatusCode, respBody, ErrAuthFailure)
+		}
+		return nil, &HTTPStatusError{Code: resp.StatusCode, Body: string(respBody)}
+	}
+
+	var result openaiToolResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	if len(result.Choices) == 0 {
+		return nil, fmt.Errorf("empty response from %s", o.name)
+	}
+
+	msg := result.Choices[0].Message
+	if len(msg.ToolCalls) > 0 {
+		calls := make([]ToolCall, len(msg.ToolCalls))
+		for i, tc := range msg.ToolCalls {
+			var args map[string]string
+			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+				return nil, fmt.Errorf("parse tool call arguments: %w", err)
+			}
+			calls[i] = ToolCall{
+				ID:   tc.ID,
+				Name: tc.Function.Name,
+				Args: args,
+			}
+		}
+		return &ChatResponse{ToolCalls: calls}, nil
+	}
+
+	text, _ := msg.Content.(string)
+	return &ChatResponse{Text: text}, nil
+}
+
+type openaiToolRequest struct {
+	Model    string          `json:"model"`
+	Messages []openaiMessage `json:"messages"`
+	Tools    []openaiTool    `json:"tools,omitempty"`
+}
+
+type openaiTool struct {
+	Type     string         `json:"type"`
+	Function openaiFunction `json:"function"`
+}
+
+type openaiFunction struct {
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	Parameters  openaiParameters `json:"parameters"`
+}
+
+type openaiParameters struct {
+	Type       string                       `json:"type"`
+	Properties map[string]map[string]string `json:"properties"`
+	Required   []string                     `json:"required,omitempty"`
+}
+
+type openaiToolResponse struct {
+	Choices []openaiToolChoice `json:"choices"`
+}
+
+type openaiToolChoice struct {
+	Message openaiToolMessage `json:"message"`
+}
+
+type openaiToolMessage struct {
+	Role      string             `json:"role"`
+	Content   any                `json:"content"`
+	ToolCalls []openaiToolCallIn `json:"tool_calls,omitempty"`
+}
+
+type openaiToolCallIn struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 // isTimeoutError returns true if the error indicates a timeout, either from

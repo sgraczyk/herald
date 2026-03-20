@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/sgraczyk/herald/internal/metrics"
 	"github.com/sgraczyk/herald/internal/provider"
 	"github.com/sgraczyk/herald/internal/store"
+	"github.com/sgraczyk/herald/internal/tool"
 )
 
 // Loop reads messages from the hub, calls the provider, and writes responses back.
@@ -25,7 +25,8 @@ type Loop struct {
 	hub                      *hub.Hub
 	provider                 provider.LLMProvider
 	extProvider              provider.LLMProvider // provider used for memory extraction and summarization
-	imageProvider            provider.ImageProvider
+	registry                 *tool.Registry
+	promptCaller             *tool.PromptCaller
 	store                    *store.DB
 	metrics                  *metrics.Metrics
 	historyLimit             int
@@ -47,11 +48,12 @@ type Loop struct {
 // before pruning. When streaming is true, providers that implement
 // StreamingProvider are used for incremental response delivery. The
 // maxArchived parameter limits how many archived conversations are kept per
-// chat (0 disables pruning, keeping all archives). The imgProvider parameter
-// is optional; when non-nil, the LLM is informed about the generate_image tool.
+// chat (0 disables pruning, keeping all archives). The registry parameter
+// is optional; when non-nil with registered tools, the LLM is informed about
+// available tools via prompt injection or native function calling.
 // The sm parameter provides configurable status messages; when nil, defaults
 // from config loading are used.
-func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget, maxArchived int, summarize, streaming bool, systemPrompt string, m *metrics.Metrics, imgProvider provider.ImageProvider, sm *config.StatusMessages) *Loop {
+func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, tokenBudget, maxArchived int, summarize, streaming bool, systemPrompt string, m *metrics.Metrics, registry *tool.Registry, sm *config.StatusMessages) *Loop {
 	if sm == nil {
 		sm = &config.StatusMessages{
 			ImageGenerating: "Generating image...",
@@ -64,11 +66,16 @@ func NewLoop(h *hub.Hub, p provider.LLMProvider, s *store.DB, historyLimit, toke
 			ProvGenericErr:  "I'm temporarily unavailable. Please try again shortly.",
 		}
 	}
+	var pc *tool.PromptCaller
+	if registry != nil {
+		pc = tool.NewPromptCaller(registry)
+	}
 	return &Loop{
 		hub:                      h,
 		provider:                 p,
 		extProvider:              pickExtractionProvider(p),
-		imageProvider:            imgProvider,
+		registry:                 registry,
+		promptCaller:             pc,
 		store:                    s,
 		metrics:                  m,
 		historyLimit:             historyLimit,
@@ -371,6 +378,20 @@ func firstUserPreview(msgs []provider.Message) string {
 	return ""
 }
 
+// hasTools reports whether any tools are registered.
+func (l *Loop) hasTools() bool {
+	return l.registry != nil && len(l.registry.All()) > 0
+}
+
+// toolPromptFragment returns the XML tool definitions to append to the system
+// prompt, or "" if no tools are registered.
+func (l *Loop) toolPromptFragment() string {
+	if l.promptCaller == nil {
+		return ""
+	}
+	return l.promptCaller.PromptFragment()
+}
+
 func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	if l.metrics != nil {
 		l.metrics.IncReceived()
@@ -399,7 +420,7 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 	l.hub.Typing <- msg.ChatID
 
 	// Build messages and call provider.
-	messages := buildMessages(history, memories, msg.Text, l.systemPrompt, summary, l.imageProvider != nil)
+	messages := buildMessages(history, memories, msg.Text, l.systemPrompt, summary, l.toolPromptFragment())
 
 	// Inject document context as a system message just before the user message.
 	if msg.Document != nil {
@@ -427,10 +448,33 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 			if sp, ok := fb.Active().(provider.StreamingProvider); ok {
 				response, streamErr := l.handleStream(ctx, sp, messages, msg.ChatID)
 				if streamErr == nil {
-					// Check for image generation tool call in streamed response.
-					if l.imageProvider != nil {
-						if prompt, ok := parseImageToolCall(response); ok {
-							l.handleImageGeneration(ctx, msg, prompt, response)
+					// Check for tool call in streamed response.
+					// handleStream already deleted the streamed message if it
+					// detected a tool call, so we just need to execute it.
+					if l.hasTools() {
+						if tc := l.promptCaller.Parse(response); tc != nil {
+							text, intermediates, execErr := l.executeToolCalls(ctx, msg, messages, response)
+							if execErr != nil {
+								if l.metrics != nil {
+									l.metrics.IncFailed()
+								}
+								slog.Error("tool execution failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", execErr.Error()))
+								var errText string
+								switch {
+								case errors.Is(execErr, provider.ErrTimeout):
+									errText = l.statusMessages.ProvTimeout
+								case errors.Is(execErr, provider.ErrAuthFailure):
+									errText = l.statusMessages.ProvAuthError
+								default:
+									errText = l.statusMessages.ProvGenericErr
+								}
+								l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
+								return
+							}
+							if text != "" {
+								l.saveAndRespond(msg, text, intermediates...)
+							}
+							// When text is empty, executeToolCalls already handled save + routing.
 							return
 						}
 					}
@@ -446,6 +490,34 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 				// Fall through to buffered Chat().
 			}
 		}
+	}
+
+	// Tool execution path: use executeToolCalls when tools are registered.
+	if l.hasTools() {
+		text, intermediates, execErr := l.executeToolCalls(ctx, msg, messages, "")
+		if execErr != nil {
+			if l.metrics != nil {
+				l.metrics.IncFailed()
+			}
+			slog.Error("tool execution failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", execErr.Error()))
+			var errText string
+			switch {
+			case errors.Is(execErr, provider.ErrTimeout):
+				errText = l.statusMessages.ProvTimeout
+			case errors.Is(execErr, provider.ErrAuthFailure):
+				errText = l.statusMessages.ProvAuthError
+			default:
+				errText = l.statusMessages.ProvGenericErr
+			}
+			l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
+			return
+		}
+		if text != "" {
+			l.saveAndRespond(msg, text, intermediates...)
+		}
+		// When text is empty, executeToolCalls already called saveAndProcess
+		// and routed the binary result (e.g., image).
+		return
 	}
 
 	response, err := l.provider.Chat(ctx, messages)
@@ -467,29 +539,24 @@ func (l *Loop) handleMessage(ctx context.Context, msg hub.InMessage) {
 		return
 	}
 
-	// Check for image generation tool call.
-	if l.imageProvider != nil {
-		if prompt, ok := parseImageToolCall(response); ok {
-			l.handleImageGeneration(ctx, msg, prompt, response)
-			return
-		}
-	}
-
 	l.saveAndRespond(msg, response)
 }
 
 // saveAndRespond saves messages to store, sends the response via hub.Out,
 // and triggers background memory extraction and summarization.
-func (l *Loop) saveAndRespond(msg hub.InMessage, response string) {
-	l.saveAndProcess(msg, response)
+// Optional intermediates are tool-call exchange messages to persist between
+// the user message and the final assistant response.
+func (l *Loop) saveAndRespond(msg hub.InMessage, response string, intermediates ...provider.Message) {
+	l.saveAndProcess(msg, response, intermediates...)
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: response}
 }
 
 // saveAndProcess saves messages to store and triggers background memory
 // extraction and summarization. Unlike saveAndRespond, it does NOT send the
 // response to hub.Out — use this when the response was already delivered
-// (e.g., via streaming).
-func (l *Loop) saveAndProcess(msg hub.InMessage, response string) {
+// (e.g., via streaming). Optional intermediates are tool-call exchange
+// messages persisted between the user message and the final assistant response.
+func (l *Loop) saveAndProcess(msg hub.InMessage, response string, intermediates ...provider.Message) {
 	// Save document as a system-role history message before the user message.
 	if msg.Document != nil {
 		docMsg := provider.Message{
@@ -517,6 +584,13 @@ func (l *Loop) saveAndProcess(msg hub.InMessage, response string) {
 	}
 	if err := l.store.Append(msg.ChatID, userMsg, l.historyLimit); err != nil {
 		slog.Error("save user message failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
+	}
+
+	// Save intermediate tool-call exchanges (assistant tool call + tool result).
+	for _, im := range intermediates {
+		if err := l.store.Append(msg.ChatID, im, l.historyLimit); err != nil {
+			slog.Error("save intermediate message failed", slog.Int64("chat_id", msg.ChatID), slog.String("role", im.Role), slog.String("error", err.Error()))
+		}
 	}
 
 	// Save assistant response.
@@ -592,10 +666,10 @@ func (l *Loop) handleStream(ctx context.Context, sp provider.StreamingProvider, 
 		return "", err
 	}
 
-	// If the response contains an image tool call, delete the streamed
-	// message (which would contain raw XML) instead of finalizing it.
-	if l.imageProvider != nil {
-		if _, ok := parseImageToolCall(response); ok {
+	// If the response contains a tool call, delete the streamed message
+	// (which would contain raw XML) instead of finalizing it.
+	if l.hasTools() {
+		if tc := l.promptCaller.Parse(response); tc != nil {
 			l.hub.Stream <- hub.StreamUpdate{ChatID: chatID, Text: "", Done: true}
 			return response, nil
 		}
@@ -614,61 +688,148 @@ func (l *Loop) handleStream(ctx context.Context, sp provider.StreamingProvider, 
 // maxImageSize is the maximum image size Telegram accepts (20 MB).
 const maxImageSize = 20 << 20
 
-// imageToolCallRe matches the XML tool_use block for generate_image.
-var imageToolCallRe = regexp.MustCompile(`(?s)<tool_use>\s*<name>generate_image</name>\s*<parameters>\s*<prompt>(.*?)</prompt>\s*</parameters>\s*</tool_use>`)
+const (
+	// maxToolCalls limits how many tool call iterations the agent loop performs
+	// before forcing a final text response from the LLM.
+	maxToolCalls = 3
 
-// parseImageToolCall checks if the LLM response contains a generate_image
-// tool call and returns the prompt. Returns ("", false) if no tool call found.
-func parseImageToolCall(response string) (string, bool) {
-	matches := imageToolCallRe.FindStringSubmatch(response)
-	if len(matches) < 2 {
-		return "", false
+	// toolCallTimeout is the per-tool execution timeout. Set above the
+	// image provider's 60-second HTTP timeout to avoid premature cancellation.
+	toolCallTimeout = 90 * time.Second
+)
+
+// executeToolCalls runs the tool call loop. If initialResponse is non-empty, it
+// is parsed for a tool call directly (used when streaming already obtained a
+// response). Returns the final text response, or ("", nil) when the result was
+// a binary payload already delivered (e.g., image).
+func (l *Loop) executeToolCalls(ctx context.Context, msg hub.InMessage, messages []provider.Message, initialResponse string) (string, []provider.Message, error) {
+	var intermediates []provider.Message
+	for i := 0; i < maxToolCalls; i++ {
+		var response string
+		var tc *tool.ToolCall
+
+		if initialResponse != "" {
+			// First iteration when streaming already got a response.
+			response = initialResponse
+			tc = l.promptCaller.Parse(response)
+			initialResponse = "" // only use once
+		} else {
+			// Call the LLM.
+			resp, err := l.provider.Chat(ctx, messages)
+			if err != nil {
+				return "", nil, err
+			}
+			response = resp
+
+			// Check for tool call.
+			if l.promptCaller != nil {
+				tc = l.promptCaller.Parse(response)
+			}
+		}
+
+		// No tool call — pure text response.
+		if tc == nil {
+			return response, intermediates, nil
+		}
+
+		// Look up tool in registry.
+		t, ok := l.registry.Get(tc.Name)
+		if !ok {
+			slog.Warn("LLM requested unknown tool", slog.String("tool", tc.Name))
+			return response, intermediates, nil
+		}
+
+		slog.Info("tool call", slog.String("tool", tc.Name), slog.Int64("chat_id", msg.ChatID))
+
+		// For generate_image: send placeholder and typing indicator.
+		if tc.Name == "generate_image" {
+			l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: l.statusMessages.ImageGenerating}
+			l.hub.Typing <- msg.ChatID
+		}
+
+		// Execute the tool.
+		if l.metrics != nil {
+			l.metrics.IncToolCall(tc.Name)
+		}
+		toolCtx, cancel := context.WithTimeout(ctx, toolCallTimeout)
+		start := time.Now()
+		result, execErr := t.Execute(toolCtx, tc.Args)
+		elapsed := time.Since(start)
+		cancel()
+
+		if l.metrics != nil {
+			l.metrics.ObserveToolLatency(tc.Name, elapsed)
+		}
+
+		if execErr != nil {
+			if l.metrics != nil {
+				l.metrics.IncToolError(tc.Name)
+			}
+			slog.Error("tool execution failed", slog.String("tool", tc.Name), slog.Int64("chat_id", msg.ChatID), slog.String("error", execErr.Error()))
+
+			// For generate_image, use specific status messages.
+			if tc.Name == "generate_image" {
+				var errText string
+				switch {
+				case errors.Is(execErr, provider.ErrTimeout):
+					errText = l.statusMessages.ImageTimeout
+				case errors.Is(execErr, provider.ErrAuthFailure):
+					errText = l.statusMessages.ImageAuthError
+				default:
+					errText = l.statusMessages.ImageGenericErr
+				}
+				l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
+				return "", nil, nil
+			}
+
+			// For other tools, feed error back to the LLM.
+			messages = append(messages,
+				provider.Message{Role: "assistant", Content: response},
+				provider.Message{Role: "user", Content: fmt.Sprintf("Tool %q failed: %s", tc.Name, execErr.Error())},
+			)
+			continue
+		}
+
+		// Route binary data (e.g., images).
+		if result.Data != nil {
+			l.routeBinaryResult(msg, tc.Name, result)
+			l.saveAndProcess(msg, response, intermediates...)
+			return "", nil, nil
+		}
+
+		// Feed text result back to the LLM for the next iteration.
+		assistantMsg := provider.Message{Role: "assistant", Content: response, Timestamp: time.Now()}
+		toolResultMsg := provider.Message{Role: "user", Content: fmt.Sprintf("Tool result for %q: %s", tc.Name, result.Text), Timestamp: time.Now()}
+		messages = append(messages, assistantMsg, toolResultMsg)
+		intermediates = append(intermediates, assistantMsg, toolResultMsg)
 	}
-	prompt := strings.TrimSpace(matches[1])
-	if prompt == "" {
-		return "", false
+
+	// Max iterations hit — ask LLM to produce a final answer.
+	messages = append(messages, provider.Message{
+		Role:    "system",
+		Content: "Tool call limit reached. Produce a final text response now without calling any tools.",
+	})
+	response, err := l.provider.Chat(ctx, messages)
+	if err != nil {
+		return "", nil, err
 	}
-	return prompt, true
+	return response, intermediates, nil
 }
 
-// handleImageGeneration sends a placeholder message, generates an image,
-// and delivers it as a Telegram photo.
-func (l *Loop) handleImageGeneration(ctx context.Context, msg hub.InMessage, prompt, llmResponse string) {
-	slog.Info("image generation requested", slog.Int64("chat_id", msg.ChatID), slog.String("prompt", prompt))
-
-	// Send placeholder and re-signal typing for the long generation call.
-	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: l.statusMessages.ImageGenerating}
-	l.hub.Typing <- msg.ChatID
-
-	// Generate image.
-	imgBytes, err := l.imageProvider.Generate(ctx, prompt)
-	if err != nil {
-		if l.metrics != nil {
-			l.metrics.IncFailed()
+// routeBinaryResult delivers binary tool output (e.g., generated images) to
+// the appropriate hub channel.
+func (l *Loop) routeBinaryResult(msg hub.InMessage, toolName string, result *tool.Result) {
+	switch toolName {
+	case "generate_image":
+		if len(result.Data) > maxImageSize {
+			slog.Error("generated image too large", slog.Int64("chat_id", msg.ChatID), slog.Int("size", len(result.Data)))
+			l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: l.statusMessages.ImageTooLarge}
+			return
 		}
-		slog.Error("image generation failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
-		var errText string
-		switch {
-		case errors.Is(err, provider.ErrTimeout):
-			errText = l.statusMessages.ImageTimeout
-		case errors.Is(err, provider.ErrAuthFailure):
-			errText = l.statusMessages.ImageAuthError
-		default:
-			errText = l.statusMessages.ImageGenericErr
-		}
-		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
-		return
+		l.hub.Image <- hub.ImageMessage{ChatID: msg.ChatID, Data: result.Data}
+	default:
+		slog.Warn("binary result from unhandled tool", slog.String("tool", toolName))
 	}
-
-	if len(imgBytes) > maxImageSize {
-		slog.Error("generated image too large", slog.Int64("chat_id", msg.ChatID), slog.Int("size", len(imgBytes)))
-		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: l.statusMessages.ImageTooLarge}
-		return
-	}
-
-	// Save the tool call as the assistant response only after successful generation.
-	l.saveAndProcess(msg, llmResponse)
-	l.hub.Image <- hub.ImageMessage{ChatID: msg.ChatID, Data: imgBytes}
 }
 
 // isTrivialMessage returns true for messages too short to contain memorable content.

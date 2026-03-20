@@ -33,6 +33,9 @@ Telegram ──write──> Hub.In ──read──> Agent Loop ──call──
                                          │
                                          ├──read/write──> Store (bbolt)
                                          │
+                                         ├──call──> Tool Registry ──dispatch──> Tool.Execute (90s timeout)
+                                         │              (max 3 calls per message, results fed back to provider)
+                                         │
                                          ├──write──> Hub.Stream ──read──> Telegram (edit-in-place, plain text)
                                          │
                                          ├──write──> Hub.Image ──read──> Telegram (send photo)
@@ -96,6 +99,10 @@ internal/
     memory.go                # Long-term memory per chat (facts, preferences)
     summary.go               # Conversation summary per chat (pre-prune condensation)
     conversation.go          # Conversation archival and listing
+  tool/
+    tool.go                  # Tool interface, Parameter, Result, ToolCall, Registry
+    prompt.go                # PromptCaller: XML tool definition injection + response parsing
+    image.go                 # ImageTool adapter wrapping ImageProvider
   telegram/
     adapter.go               # go-telegram/bot long-polling, user whitelist
 docs/

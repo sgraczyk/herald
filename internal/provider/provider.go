@@ -34,10 +34,11 @@ type ImageData struct {
 
 // Message represents a single message in a conversation.
 type Message struct {
-	Role      string      `json:"role"`    // "user", "assistant", "system"
-	Content   string      `json:"content"`
-	Images    []ImageData `json:"images,omitempty"`
-	Timestamp time.Time   `json:"timestamp"`
+	Role        string       `json:"role"`    // "user", "assistant", "system"
+	Content     string       `json:"content"`
+	Images      []ImageData  `json:"images,omitempty"`
+	ToolResults []ToolResult `json:"tool_results,omitempty"`
+	Timestamp   time.Time    `json:"timestamp"`
 }
 
 // LLMProvider is the interface that all LLM backends must implement.
@@ -56,4 +57,51 @@ type StreamingProvider interface {
 	// Providers must check ctx.Done() between processing each event/line to allow
 	// prompt cancellation. Returns the complete response string on success.
 	ChatStream(ctx context.Context, messages []Message, fn func(delta string)) (string, error)
+}
+
+// ChatOptions configures a tool-aware chat call.
+type ChatOptions struct {
+	Tools []ToolDefinition
+}
+
+// ToolDefinition describes a tool for providers with native function calling.
+type ToolDefinition struct {
+	Name        string
+	Description string
+	Parameters  []ToolParameter
+}
+
+// ToolParameter describes a single tool parameter.
+type ToolParameter struct {
+	Name        string
+	Type        string
+	Description string
+	Required    bool
+}
+
+// ChatResponse is the result of a tool-aware chat call.
+type ChatResponse struct {
+	Text      string     // final text response (empty if tool calls present)
+	ToolCalls []ToolCall // tool invocations requested by the LLM
+}
+
+// ToolCall represents a tool invocation from the LLM.
+type ToolCall struct {
+	ID   string            // provider-assigned call ID (OpenAI requires for result pairing)
+	Name string
+	Args map[string]string
+}
+
+// ToolResult feeds a tool execution result back to the provider.
+type ToolResult struct {
+	CallID string // matches ToolCall.ID
+	Result string
+}
+
+// ToolProvider is an optional interface for providers that support native
+// function calling. Providers that don't implement this get tool support
+// via XML prompt injection (PromptCaller).
+type ToolProvider interface {
+	LLMProvider
+	ChatWithTools(ctx context.Context, messages []Message, opts ChatOptions) (*ChatResponse, error)
 }
