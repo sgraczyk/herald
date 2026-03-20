@@ -135,6 +135,11 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 
+	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
+	a.mu.Lock()
+	a.reactionMsgs[chatID] = msg.ID
+	a.mu.Unlock()
+
 	in := parseMessage(chatID, userID, text)
 	a.hub.In <- in
 }
@@ -193,6 +198,11 @@ func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Messa
 		slog.Debug("dropping photo message, hub is draining", slog.Int64("chat_id", chatID))
 		return
 	}
+
+	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
+	a.mu.Lock()
+	a.reactionMsgs[chatID] = msg.ID
+	a.mu.Unlock()
 
 	a.hub.In <- hub.InMessage{
 		ChatID: chatID,
@@ -266,6 +276,11 @@ func (a *Adapter) handleDocument(ctx context.Context, b *bot.Bot, msg *models.Me
 		slog.Debug("dropping document message, hub is draining", slog.Int64("chat_id", chatID))
 		return
 	}
+
+	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
+	a.mu.Lock()
+	a.reactionMsgs[chatID] = msg.ID
+	a.mu.Unlock()
 
 	a.hub.In <- hub.InMessage{
 		ChatID: chatID,

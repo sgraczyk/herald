@@ -301,6 +301,56 @@ func TestHandleUpdateWhitespaceText(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateTracksReactionMsg(t *testing.T) {
+	a, h := testAdapter(t, map[int64]bool{111: true})
+
+	update := &models.Update{
+		Message: &models.Message{
+			ID:   77,
+			From: &models.User{ID: 111},
+			Chat: models.Chat{ID: 42},
+			Text: "hello",
+		},
+	}
+	a.handleUpdate(context.Background(), nil, update)
+
+	// Drain the hub message.
+	readIn(t, h)
+
+	a.mu.Lock()
+	msgID, ok := a.reactionMsgs[42]
+	a.mu.Unlock()
+
+	if !ok {
+		t.Fatal("expected reactionMsgs entry for chat 42")
+	}
+	if msgID != 77 {
+		t.Errorf("expected message ID 77, got %d", msgID)
+	}
+}
+
+func TestHandleUpdateNoReactionForUnauthorized(t *testing.T) {
+	a, _ := testAdapter(t, map[int64]bool{111: true})
+
+	update := &models.Update{
+		Message: &models.Message{
+			ID:   77,
+			From: &models.User{ID: 999},
+			Chat: models.Chat{ID: 42},
+			Text: "hello",
+		},
+	}
+	a.handleUpdate(context.Background(), nil, update)
+
+	a.mu.Lock()
+	_, ok := a.reactionMsgs[42]
+	a.mu.Unlock()
+
+	if ok {
+		t.Fatal("expected no reactionMsgs entry for unauthorized user")
+	}
+}
+
 func TestHandleUpdateCommandParsing(t *testing.T) {
 	a, h := testAdapter(t, map[int64]bool{111: true})
 
