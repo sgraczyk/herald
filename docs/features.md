@@ -1,6 +1,6 @@
 # Features
 
-Herald's capabilities beyond basic chat: memory, image understanding, response handling, custom personality, and commands.
+Herald's capabilities beyond basic chat: memory, image understanding, response handling, message reactions, custom personality, and commands.
 
 ## Automatic Memory Extraction
 
@@ -124,6 +124,10 @@ The document stays in conversation history. You can ask follow-up questions with
 | `This PDF appears to be scanned/image-based. Text extraction isn't supported yet.` | PDF contains images rather than selectable text |
 | `Couldn't process this PDF. The file may be corrupted.` | Malformed or invalid PDF file |
 | `PDF too large (max 10 MB).` | File exceeds the size limit |
+
+## Message Reactions
+
+Herald reacts to your messages with emoji to show processing status. An hourglass appears when your message is received, replaced by a checkmark when the response is complete or a cross-mark if something went wrong. This works automatically with text messages, photos, and documents. No configuration needed. In group chats where the bot lacks reaction permissions, reactions are silently skipped.
 
 ## Streaming Responses
 
