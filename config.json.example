@@ -42,5 +42,15 @@
   "streaming": false,
   "max_retries": 1,
   "log_level": "info",
+  "status_messages": {
+    "image_generating": "Generowanie obrazu...",
+    "image_timeout": "Generowanie obrazu trwa zbyt dlugo. Sprobuj prostszego opisu lub sprobuj ponownie.",
+    "image_auth_error": "Problem z konfiguracją uslugi obrazow. Administrator zostal powiadomiony.",
+    "image_generic_error": "Nie udalo sie wygenerowac obrazu. Sprobuj ponownie.",
+    "image_too_large": "Wygenerowany obraz jest zbyt duzy dla Telegrama.",
+    "provider_timeout": "Odpowiedz trwa zbyt dlugo. Sprobuj prostszego pytania lub sprobuj ponownie.",
+    "provider_auth_error": "Problem z konfiguracją uslugi. Administrator zostal powiadomiony.",
+    "provider_generic_error": "Jestem chwilowo niedostepny. Sprobuj ponownie za chwile."
+  },
   "allowed_user_ids_env": "ALLOWED_USER_IDS"
 }

@@ -291,3 +291,69 @@ func TestParseUserIDs_EmptyString(t *testing.T) {
 		t.Errorf("parseUserIDs empty = %v, want empty", got)
 	}
 }
+
+func TestLoad_StatusMessages_Defaults(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `{"telegram": {"token_env": "X"}}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.StatusMessages == nil {
+		t.Fatal("StatusMessages is nil, want defaults")
+	}
+	if cfg.StatusMessages.ImageGenerating != "Generating image..." {
+		t.Errorf("ImageGenerating = %q, want default", cfg.StatusMessages.ImageGenerating)
+	}
+	if cfg.StatusMessages.ProvGenericErr != "I'm temporarily unavailable. Please try again shortly." {
+		t.Errorf("ProvGenericErr = %q, want default", cfg.StatusMessages.ProvGenericErr)
+	}
+}
+
+func TestLoad_StatusMessages_Custom(t *testing.T) {
+	json := `{
+		"telegram": {"token_env": "X"},
+		"status_messages": {
+			"image_generating": "Generowanie obrazu...",
+			"provider_timeout": "Za dlugo."
+		}
+	}`
+	cfg, err := Load(writeConfig(t, json))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.StatusMessages.ImageGenerating != "Generowanie obrazu..." {
+		t.Errorf("ImageGenerating = %q, want custom", cfg.StatusMessages.ImageGenerating)
+	}
+	if cfg.StatusMessages.ProvTimeout != "Za dlugo." {
+		t.Errorf("ProvTimeout = %q, want custom", cfg.StatusMessages.ProvTimeout)
+	}
+	// Unset fields should get defaults.
+	if cfg.StatusMessages.ImageTimeout != "Image generation took too long. Try a simpler prompt or try again shortly." {
+		t.Errorf("ImageTimeout = %q, want default", cfg.StatusMessages.ImageTimeout)
+	}
+}
+
+func TestLoad_StatusMessages_AllCustom(t *testing.T) {
+	json := `{
+		"telegram": {"token_env": "X"},
+		"status_messages": {
+			"image_generating": "a",
+			"image_timeout": "b",
+			"image_auth_error": "c",
+			"image_generic_error": "d",
+			"image_too_large": "e",
+			"provider_timeout": "f",
+			"provider_auth_error": "g",
+			"provider_generic_error": "h"
+		}
+	}`
+	cfg, err := Load(writeConfig(t, json))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	sm := cfg.StatusMessages
+	if sm.ImageGenerating != "a" || sm.ImageTimeout != "b" || sm.ImageAuthError != "c" ||
+		sm.ImageGenericErr != "d" || sm.ImageTooLarge != "e" || sm.ProvTimeout != "f" ||
+		sm.ProvAuthError != "g" || sm.ProvGenericErr != "h" {
+		t.Errorf("unexpected status messages: %+v", sm)
+	}
+}
