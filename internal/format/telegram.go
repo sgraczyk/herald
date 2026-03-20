@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"html"
+	"regexp"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -40,7 +41,8 @@ func TelegramHTML(markdown string) string {
 		return html.EscapeString(markdown)
 	}
 
-	return strings.TrimSpace(buf.String())
+	result := strings.TrimSpace(buf.String())
+	return fixUnparsedBold(result)
 }
 
 type telegramRenderer struct{}
@@ -524,5 +526,60 @@ func stripHTMLTags(s string) string {
 			buf.WriteRune(r)
 		}
 	}
+	return buf.String()
+}
+
+// unparsedBoldRe matches **...** that goldmark left unconverted.
+var unparsedBoldRe = regexp.MustCompile(`\*\*(.+?)\*\*`)
+
+// fixUnparsedBold converts remaining **...** patterns to <b>...</b>.
+// CommonMark does not treat ** as a closing delimiter when it follows
+// punctuation and is immediately followed by a Unicode letter (e.g.,
+// **word:**nextword). This post-processing step catches those cases.
+// Content inside <pre> and <code> tags is left unchanged.
+func fixUnparsedBold(s string) string {
+	if !strings.Contains(s, "**") {
+		return s
+	}
+
+	var buf strings.Builder
+	buf.Grow(len(s))
+
+	for len(s) > 0 {
+		// Find the next <pre or <code tag.
+		preIdx := strings.Index(s, "<pre")
+		codeIdx := strings.Index(s, "<code")
+
+		tagIdx := -1
+		var closeTag string
+		switch {
+		case preIdx >= 0 && (codeIdx < 0 || preIdx < codeIdx):
+			tagIdx = preIdx
+			closeTag = "</pre>"
+		case codeIdx >= 0:
+			tagIdx = codeIdx
+			closeTag = "</code>"
+		}
+
+		if tagIdx < 0 {
+			buf.WriteString(unparsedBoldRe.ReplaceAllString(s, "<b>$1</b>"))
+			break
+		}
+
+		// Process text before the tag.
+		buf.WriteString(unparsedBoldRe.ReplaceAllString(s[:tagIdx], "<b>$1</b>"))
+		s = s[tagIdx:]
+
+		// Find the matching close tag and copy the block verbatim.
+		closeIdx := strings.Index(s, closeTag)
+		if closeIdx < 0 {
+			buf.WriteString(s)
+			break
+		}
+		closeIdx += len(closeTag)
+		buf.WriteString(s[:closeIdx])
+		s = s[closeIdx:]
+	}
+
 	return buf.String()
 }

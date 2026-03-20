@@ -29,6 +29,48 @@ func TestTelegramHTML_Bold(t *testing.T) {
 	}
 }
 
+func TestTelegramHTML_BoldNoSpaceAfterClosing(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "bold colon no space",
+			in:   "**Bianka:**Nasza koteczka",
+			want: "<b>Bianka:</b>Nasza koteczka",
+		},
+		{
+			name: "multiple bold colon no space",
+			in:   "**Bianka:**kot\n**Homelab:**serwer\n**Gaming:**gra",
+			want: "<b>Bianka:</b>kot\n<b>Homelab:</b>serwer\n<b>Gaming:</b>gra",
+		},
+		{
+			name: "bold no space preserved in code block",
+			in:   "```\n**not bold:**here\n```",
+			want: "<pre><code>**not bold:**here\n</code></pre>",
+		},
+		{
+			name: "bold no space preserved in inline code",
+			in:   "use `**not bold:**here` ok",
+			want: "use <code>**not bold:**here</code> ok",
+		},
+		{
+			name: "normal bold still works",
+			in:   "**Bianka:** kot",
+			want: "<b>Bianka:</b> kot",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := TelegramHTML(tt.in)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTelegramHTML_Italic(t *testing.T) {
 	got := TelegramHTML("This is *italic* text")
 	want := "This is <i>italic</i> text"
