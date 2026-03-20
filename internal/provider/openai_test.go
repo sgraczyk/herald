@@ -235,6 +235,119 @@ func TestBuildOpenAIContentWithImage(t *testing.T) {
 	}
 }
 
+func TestOpenAIChatWithToolsTextResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req)
+
+		// Verify tools were sent.
+		tools, ok := req["tools"].([]any)
+		if !ok || len(tools) != 1 {
+			t.Errorf("expected 1 tool, got %v", req["tools"])
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{
+					"role":    "assistant",
+					"content": "Here is your answer.",
+				}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI("test", srv.URL, "model", "key")
+	resp, err := p.ChatWithTools(context.Background(), []Message{
+		{Role: "user", Content: "hello"},
+	}, ChatOptions{
+		Tools: []ToolDefinition{
+			{Name: "test_tool", Description: "A test", Parameters: []ToolParameter{
+				{Name: "arg", Type: "string", Description: "An arg", Required: true},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ChatWithTools() error: %v", err)
+	}
+	if resp.Text != "Here is your answer." {
+		t.Errorf("Text = %q, want %q", resp.Text, "Here is your answer.")
+	}
+	if len(resp.ToolCalls) != 0 {
+		t.Errorf("expected no tool calls, got %d", len(resp.ToolCalls))
+	}
+}
+
+func TestOpenAIChatWithToolsToolCall(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{
+					"role":    "assistant",
+					"content": nil,
+					"tool_calls": []map[string]any{
+						{
+							"id":   "call_123",
+							"type": "function",
+							"function": map[string]any{
+								"name":      "generate_image",
+								"arguments": `{"prompt":"a cute cat"}`,
+							},
+						},
+					},
+				}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI("test", srv.URL, "model", "key")
+	resp, err := p.ChatWithTools(context.Background(), []Message{
+		{Role: "user", Content: "draw a cat"},
+	}, ChatOptions{
+		Tools: []ToolDefinition{
+			{Name: "generate_image", Description: "Generate image", Parameters: []ToolParameter{
+				{Name: "prompt", Type: "string", Description: "Prompt", Required: true},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ChatWithTools() error: %v", err)
+	}
+	if resp.Text != "" {
+		t.Errorf("Text = %q, want empty", resp.Text)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(resp.ToolCalls))
+	}
+	tc := resp.ToolCalls[0]
+	if tc.ID != "call_123" {
+		t.Errorf("ID = %q, want %q", tc.ID, "call_123")
+	}
+	if tc.Name != "generate_image" {
+		t.Errorf("Name = %q, want %q", tc.Name, "generate_image")
+	}
+	if tc.Args["prompt"] != "a cute cat" {
+		t.Errorf("Args[prompt] = %q, want %q", tc.Args["prompt"], "a cute cat")
+	}
+}
+
+func TestOpenAIChatWithToolsAPIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("server error"))
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI("test", srv.URL, "model", "key")
+	_, err := p.ChatWithTools(context.Background(), []Message{
+		{Role: "user", Content: "hello"},
+	}, ChatOptions{})
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+}
+
 func TestOpenAIChatWithImage(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var raw map[string]any
