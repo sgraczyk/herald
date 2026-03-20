@@ -117,11 +117,6 @@ func bestBoundary(html string, limit int) int {
 				if preDep < 0 {
 					preDep = 0
 				}
-			} else if i+4 < len(s) && s[i+1:i+4] == "pre" {
-				// <pre ...> with attributes (e.g. <pre><code class="...">)
-				if next := s[i+4]; next == ' ' || next == '>' {
-					preDep++
-				}
 			}
 			continue
 		}
