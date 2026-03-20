@@ -60,6 +60,16 @@ func TestTelegramHTML_BoldNoSpaceAfterClosing(t *testing.T) {
 			in:   "**Bianka:** kot",
 			want: "<b>Bianka:</b> kot",
 		},
+		{
+			name: "heading with unparsed bold no nesting",
+			in:   "# **Title:**content",
+			want: "<b>Title:content</b>",
+		},
+		{
+			name: "lone double asterisks not converted",
+			in:   "Use ** for emphasis **word:**next",
+			want: "Use ** for emphasis <b>word:</b>next",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

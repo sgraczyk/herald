@@ -530,13 +530,17 @@ func stripHTMLTags(s string) string {
 }
 
 // unparsedBoldRe matches **...** that goldmark left unconverted.
-var unparsedBoldRe = regexp.MustCompile(`\*\*(.+?)\*\*`)
+// The first character after ** must not be whitespace or * to avoid
+// matching lone ** markers that goldmark intentionally left as literal text.
+var unparsedBoldRe = regexp.MustCompile(`\*\*([^\s*].*?)\*\*`)
 
 // fixUnparsedBold converts remaining **...** patterns to <b>...</b>.
 // CommonMark does not treat ** as a closing delimiter when it follows
 // punctuation and is immediately followed by a Unicode letter (e.g.,
 // **word:**nextword). This post-processing step catches those cases.
-// Content inside <pre> and <code> tags is left unchanged.
+// Content inside <pre>, <code>, and <b> tags is left unchanged.
+// Inside <b> blocks (e.g., headings), ** markers are stripped rather than
+// converted, since the content is already bold.
 func fixUnparsedBold(s string) string {
 	if !strings.Contains(s, "**") {
 		return s
@@ -546,19 +550,24 @@ func fixUnparsedBold(s string) string {
 	buf.Grow(len(s))
 
 	for len(s) > 0 {
-		// Find the next <pre or <code tag.
 		preIdx := strings.Index(s, "<pre")
 		codeIdx := strings.Index(s, "<code")
+		boldIdx := strings.Index(s, "<b>")
 
 		tagIdx := -1
 		var closeTag string
+		stripOnly := false
 		switch {
-		case preIdx >= 0 && (codeIdx < 0 || preIdx < codeIdx):
+		case preIdx >= 0 && (codeIdx < 0 || preIdx <= codeIdx) && (boldIdx < 0 || preIdx <= boldIdx):
 			tagIdx = preIdx
 			closeTag = "</pre>"
-		case codeIdx >= 0:
+		case codeIdx >= 0 && (boldIdx < 0 || codeIdx <= boldIdx):
 			tagIdx = codeIdx
 			closeTag = "</code>"
+		case boldIdx >= 0:
+			tagIdx = boldIdx
+			closeTag = "</b>"
+			stripOnly = true
 		}
 
 		if tagIdx < 0 {
@@ -570,14 +579,21 @@ func fixUnparsedBold(s string) string {
 		buf.WriteString(unparsedBoldRe.ReplaceAllString(s[:tagIdx], "<b>$1</b>"))
 		s = s[tagIdx:]
 
-		// Find the matching close tag and copy the block verbatim.
+		// Find the matching close tag.
 		closeIdx := strings.Index(s, closeTag)
 		if closeIdx < 0 {
 			buf.WriteString(s)
 			break
 		}
 		closeIdx += len(closeTag)
-		buf.WriteString(s[:closeIdx])
+
+		if stripOnly {
+			// Inside <b> blocks (e.g., headings), strip ** markers
+			// instead of converting to nested <b> tags.
+			buf.WriteString(strings.ReplaceAll(s[:closeIdx], "**", ""))
+		} else {
+			buf.WriteString(s[:closeIdx])
+		}
 		s = s[closeIdx:]
 	}
 
