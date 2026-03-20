@@ -13,6 +13,8 @@ import (
 
 // ImageProvider generates images from text prompts.
 type ImageProvider interface {
+	// Name returns the provider's identifier.
+	Name() string
 	// Generate creates an image from a text prompt and returns the raw image bytes.
 	Generate(ctx context.Context, prompt string) ([]byte, error)
 }
@@ -27,21 +29,26 @@ const maxImageResponseSize = 20 << 20
 
 // Chutes generates images using the Chutes.ai API (e.g. FLUX.1-schnell).
 type Chutes struct {
+	name    string
 	baseURL string
 	apiKey  string
 	client  *http.Client
 }
 
 // NewChutes creates a new Chutes.ai image provider. The baseURL is the chute
-// endpoint (e.g. "https://chutes.ai/app/chute/<id>"); "/generate" is appended
+// API base (e.g. "https://api.chutes.ai/chutes/<id>"); "/generate" is appended
 // internally.
-func NewChutes(baseURL, apiKey string) *Chutes {
+func NewChutes(name, baseURL, apiKey string) *Chutes {
 	return &Chutes{
+		name:    name,
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
 		client:  &http.Client{Timeout: chutesTimeout},
 	}
 }
+
+// Name returns the provider's identifier.
+func (c *Chutes) Name() string { return c.name }
 
 // Generate creates an image from a text prompt using the Chutes.ai API.
 func (c *Chutes) Generate(ctx context.Context, prompt string) ([]byte, error) {

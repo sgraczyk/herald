@@ -1167,6 +1167,7 @@ type mockImageProvider struct {
 	err  error
 }
 
+func (m *mockImageProvider) Name() string { return "mock" }
 func (m *mockImageProvider) Generate(_ context.Context, _ string) ([]byte, error) {
 	return m.data, m.err
 }

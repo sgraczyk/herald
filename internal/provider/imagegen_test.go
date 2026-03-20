@@ -51,7 +51,7 @@ func TestChutes_Generate(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewChutes(srv.URL, "test-key")
+	c := NewChutes("test", srv.URL, "test-key")
 
 	result, err := c.Generate(context.Background(), "a cute cat")
 	if err != nil {
@@ -69,7 +69,7 @@ func TestChutes_GenerateAPIError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewChutes(srv.URL, "test-key")
+	c := NewChutes("test", srv.URL, "test-key")
 
 	_, err := c.Generate(context.Background(), "bad prompt")
 	if err == nil {
@@ -84,7 +84,7 @@ func TestChutes_GenerateAuthError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewChutes(srv.URL, "bad-key")
+	c := NewChutes("test", srv.URL, "bad-key")
 
 	_, err := c.Generate(context.Background(), "a cat")
 	if err == nil {
@@ -102,7 +102,7 @@ func TestChutes_GenerateEmptyBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewChutes(srv.URL, "test-key")
+	c := NewChutes("test", srv.URL, "test-key")
 
 	_, err := c.Generate(context.Background(), "a cat")
 	if err == nil {
