@@ -125,6 +125,9 @@ func LoadWithDefaults(path string, defaults []byte) (*Config, error) {
 	if cfg.ImageProvider != nil && cfg.ImageProvider.APIKeyEnv != "" {
 		cfg.ImageProvider.APIKey = os.Getenv(cfg.ImageProvider.APIKeyEnv)
 	}
+	if cfg.ImageProvider != nil && cfg.ImageProvider.Type == "chutes" && cfg.ImageProvider.BaseURL == "" {
+		return nil, fmt.Errorf("image_provider.base_url is required when type is \"chutes\"")
+	}
 
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "info"

@@ -20,6 +20,11 @@ type ImageProvider interface {
 // chutesTimeout is the HTTP client timeout for Chutes.ai image generation.
 const chutesTimeout = 60 * time.Second
 
+// maxImageResponseSize is the maximum allowed image response body size (20 MB).
+// This matches Telegram's sendPhoto file size limit and is intentionally
+// separate from maxResponseSize which caps LLM text responses.
+const maxImageResponseSize = 20 << 20
+
 // Chutes generates images using the Chutes.ai API (e.g. FLUX.1-schnell).
 type Chutes struct {
 	baseURL string
@@ -78,12 +83,12 @@ func (c *Chutes) Generate(ctx context.Context, prompt string) ([]byte, error) {
 		return nil, &HTTPStatusError{Code: resp.StatusCode, Body: string(respBody)}
 	}
 
-	imgBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize+1))
+	imgBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxImageResponseSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
-	if len(imgBytes) > maxResponseSize {
-		return nil, fmt.Errorf("response body exceeds %d bytes limit", maxResponseSize)
+	if len(imgBytes) > maxImageResponseSize {
+		return nil, fmt.Errorf("response body exceeds %d bytes limit", maxImageResponseSize)
 	}
 	if len(imgBytes) == 0 {
 		return nil, fmt.Errorf("empty response from Chutes.ai")

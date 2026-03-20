@@ -28,7 +28,7 @@ You have access to the following tool:
 </parameters>
 </tool>
 
-When you want to generate an image, respond with ONLY this XML block and nothing else:
+When you want to generate an image, respond with this XML block:
 <tool_use>
 <name>generate_image</name>
 <parameters>

@@ -619,17 +619,27 @@ func parseImageToolCall(response string) (string, bool) {
 func (l *Loop) handleImageGeneration(ctx context.Context, msg hub.InMessage, prompt, llmResponse string) {
 	slog.Info("image generation requested", slog.Int64("chat_id", msg.ChatID), slog.String("prompt", prompt))
 
-	// Send placeholder.
+	// Send placeholder and re-signal typing for the long generation call.
 	l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Generating image..."}
-
-	// Save the tool call as the assistant response in history.
-	l.saveAndProcess(msg, llmResponse)
+	l.hub.Typing <- msg.ChatID
 
 	// Generate image.
 	imgBytes, err := l.imageProvider.Generate(ctx, prompt)
 	if err != nil {
+		if l.metrics != nil {
+			l.metrics.IncFailed()
+		}
 		slog.Error("image generation failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
-		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: "Failed to generate image. Please try again."}
+		var errText string
+		switch {
+		case errors.Is(err, provider.ErrTimeout):
+			errText = "Image generation took too long. Try a simpler prompt or try again shortly."
+		case errors.Is(err, provider.ErrAuthFailure):
+			errText = "Image service configuration issue. The admin has been notified."
+		default:
+			errText = "Failed to generate image. Please try again."
+		}
+		l.hub.Out <- hub.OutMessage{ChatID: msg.ChatID, Text: errText}
 		return
 	}
 
@@ -639,6 +649,8 @@ func (l *Loop) handleImageGeneration(ctx context.Context, msg hub.InMessage, pro
 		return
 	}
 
+	// Save the tool call as the assistant response only after successful generation.
+	l.saveAndProcess(msg, llmResponse)
 	l.hub.Image <- hub.ImageMessage{ChatID: msg.ChatID, Data: imgBytes}
 }
 
