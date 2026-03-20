@@ -75,7 +75,7 @@ A Chutes.ai API key is required. Add the `image_providers` section to `config.js
     {
       "name": "z-image",
       "type": "chutes",
-      "base_url": "https://api.chutes.ai/chutes/fe85d993-9a61-5cc1-a21e-64fe4e50d612",
+      "base_url": "https://chutes-z-image-turbo.chutes.ai",
       "api_key_env": "CHUTES_API_KEY"
     }
   ]
