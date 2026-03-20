@@ -42,20 +42,22 @@ type Adapter struct {
 	allowedIDs map[int64]bool
 	extractor  document.Extractor
 
-	mu         sync.Mutex
-	typing     map[int64]context.CancelFunc // active typing indicators per chat
-	streamMsgs map[int64]int                // chatID -> Telegram message ID for in-progress stream
+	mu           sync.Mutex
+	typing       map[int64]context.CancelFunc // active typing indicators per chat
+	streamMsgs   map[int64]int                // chatID -> Telegram message ID for in-progress stream
+	reactionMsgs map[int64]int                // chatID -> incoming Telegram message ID for reactions
 }
 
 // New creates a new Telegram adapter.
 // It returns an error if allowedUserIDs is empty, enforcing fail-closed access control.
 func New(token string, h *hub.Hub, allowedUserIDs []int64, ext document.Extractor) (*Adapter, error) {
 	a := &Adapter{
-		hub:        h,
-		allowedIDs: make(map[int64]bool, len(allowedUserIDs)),
-		extractor:  ext,
-		typing:     make(map[int64]context.CancelFunc),
-		streamMsgs: make(map[int64]int),
+		hub:          h,
+		allowedIDs:   make(map[int64]bool, len(allowedUserIDs)),
+		extractor:    ext,
+		typing:       make(map[int64]context.CancelFunc),
+		streamMsgs:   make(map[int64]int),
+		reactionMsgs: make(map[int64]int),
 	}
 
 	for _, id := range allowedUserIDs {
@@ -133,11 +135,21 @@ func (a *Adapter) handleUpdate(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 
+	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
+	a.mu.Lock()
+	a.reactionMsgs[chatID] = msg.ID
+	a.mu.Unlock()
+
 	in := parseMessage(chatID, userID, text)
 	a.hub.In <- in
 }
 
 func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Message, chatID, userID int64) {
+	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
+	a.mu.Lock()
+	a.reactionMsgs[chatID] = msg.ID
+	a.mu.Unlock()
+
 	// Select largest photo (last element in Telegram's PhotoSize array).
 	photo := msg.Photo[len(msg.Photo)-1]
 
@@ -189,6 +201,7 @@ func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Messa
 
 	if a.hub.Draining() {
 		slog.Debug("dropping photo message, hub is draining", slog.Int64("chat_id", chatID))
+		a.completeReaction(ctx, chatID, "\u274c")
 		return
 	}
 
@@ -205,6 +218,11 @@ func (a *Adapter) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Messa
 const maxDocumentSize = 10 << 20 // 10 MB
 
 func (a *Adapter) handleDocument(ctx context.Context, b *bot.Bot, msg *models.Message, chatID, userID int64) {
+	a.setReaction(ctx, chatID, msg.ID, "\u23f3")
+	a.mu.Lock()
+	a.reactionMsgs[chatID] = msg.ID
+	a.mu.Unlock()
+
 	if msg.Document.FileSize > maxDocumentSize {
 		a.sendError(ctx, chatID, "PDF too large (max 10 MB).")
 		return
@@ -262,6 +280,7 @@ func (a *Adapter) handleDocument(ctx context.Context, b *bot.Bot, msg *models.Me
 
 	if a.hub.Draining() {
 		slog.Debug("dropping document message, hub is draining", slog.Int64("chat_id", chatID))
+		a.completeReaction(ctx, chatID, "\u274c")
 		return
 	}
 
@@ -294,6 +313,8 @@ func documentErrorMessage(err error) string {
 }
 
 func (a *Adapter) sendError(ctx context.Context, chatID int64, text string) {
+	a.completeReaction(ctx, chatID, "\u274c")
+
 	_, err := a.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
 		Text:   text,
@@ -338,6 +359,7 @@ func (a *Adapter) dispatchOut(ctx context.Context) {
 			a.stopTyping(msg.ChatID)
 
 			formatted := format.TelegramHTML(msg.Text)
+			sendFailed := false
 			for _, chunk := range format.Split(formatted, 4096) {
 				_, err := a.bot.SendMessage(ctx, &bot.SendMessageParams{
 					ChatID:    msg.ChatID,
@@ -352,8 +374,14 @@ func (a *Adapter) dispatchOut(ctx context.Context) {
 					})
 					if err != nil {
 						slog.Error("send message failed", slog.Int64("chat_id", msg.ChatID), slog.String("error", err.Error()))
+						sendFailed = true
 					}
 				}
+			}
+			if sendFailed {
+				a.completeReaction(ctx, msg.ChatID, "\u274c")
+			} else {
+				a.completeReaction(ctx, msg.ChatID, "\u2705")
 			}
 		}
 	}
@@ -384,6 +412,7 @@ func (a *Adapter) dispatchStream(ctx context.Context) {
 
 			// Error case: empty text + done means delete in-progress message.
 			if update.Text == "" && update.Done {
+				a.completeReaction(ctx, update.ChatID, "\u274c")
 				if exists {
 					_, err := a.bot.DeleteMessage(ctx, &bot.DeleteMessageParams{
 						ChatID:    update.ChatID,
@@ -470,6 +499,8 @@ func (a *Adapter) dispatchStream(ctx context.Context) {
 				a.mu.Lock()
 				delete(a.streamMsgs, update.ChatID)
 				a.mu.Unlock()
+
+				a.completeReaction(ctx, update.ChatID, "\u2705")
 			}
 		}
 	}
@@ -489,6 +520,9 @@ func (a *Adapter) dispatchImage(ctx context.Context) {
 			})
 			if err != nil {
 				slog.Error("send photo failed", slog.Int64("chat_id", img.ChatID), slog.String("error", err.Error()))
+				a.completeReaction(ctx, img.ChatID, "\u274c")
+			} else {
+				a.completeReaction(ctx, img.ChatID, "\u2705")
 			}
 		}
 	}
@@ -538,5 +572,46 @@ func (a *Adapter) sendTypingAction(ctx context.Context, chatID int64) {
 	})
 	if err != nil && ctx.Err() == nil {
 		slog.Debug("send typing action failed", slog.Int64("chat_id", chatID), slog.String("error", err.Error()))
+	}
+}
+
+// setReaction sets an emoji reaction on a message. Errors are logged at debug
+// level and silently ignored — the bot may lack reaction permissions.
+func (a *Adapter) setReaction(ctx context.Context, chatID int64, messageID int, emoji string) {
+	if a.bot == nil {
+		return
+	}
+	_, err := a.bot.SetMessageReaction(ctx, &bot.SetMessageReactionParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+		Reaction: []models.ReactionType{
+			{
+				Type:              models.ReactionTypeTypeEmoji,
+				ReactionTypeEmoji: &models.ReactionTypeEmoji{Emoji: emoji},
+			},
+		},
+	})
+	if err != nil {
+		slog.Debug("set reaction failed",
+			slog.Int64("chat_id", chatID),
+			slog.Int("message_id", messageID),
+			slog.String("emoji", emoji),
+			slog.String("error", err.Error()),
+		)
+	}
+}
+
+// completeReaction sets a final reaction (checkmark or cross-mark) on the tracked
+// incoming message for chatID and removes the tracking entry.
+func (a *Adapter) completeReaction(ctx context.Context, chatID int64, emoji string) {
+	a.mu.Lock()
+	msgID, ok := a.reactionMsgs[chatID]
+	if ok {
+		delete(a.reactionMsgs, chatID)
+	}
+	a.mu.Unlock()
+
+	if ok {
+		a.setReaction(ctx, chatID, msgID, emoji)
 	}
 }

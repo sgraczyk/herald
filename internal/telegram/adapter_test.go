@@ -153,10 +153,11 @@ func testAdapter(t *testing.T, allowedIDs map[int64]bool) (*Adapter, *hub.Hub) {
 	t.Helper()
 	h := hub.New()
 	return &Adapter{
-		hub:        h,
-		allowedIDs: allowedIDs,
-		typing:     make(map[int64]context.CancelFunc),
-		streamMsgs: make(map[int64]int),
+		hub:          h,
+		allowedIDs:   allowedIDs,
+		typing:       make(map[int64]context.CancelFunc),
+		streamMsgs:   make(map[int64]int),
+		reactionMsgs: make(map[int64]int),
 	}, h
 }
 
@@ -297,6 +298,107 @@ func TestHandleUpdateWhitespaceText(t *testing.T) {
 	_, ok := readIn(t, h)
 	if ok {
 		t.Fatal("expected no message on Hub.In for whitespace-only text")
+	}
+}
+
+func TestHandleUpdateTracksReactionMsg(t *testing.T) {
+	a, h := testAdapter(t, map[int64]bool{111: true})
+
+	update := &models.Update{
+		Message: &models.Message{
+			ID:   77,
+			From: &models.User{ID: 111},
+			Chat: models.Chat{ID: 42},
+			Text: "hello",
+		},
+	}
+	a.handleUpdate(context.Background(), nil, update)
+
+	// Drain the hub message.
+	readIn(t, h)
+
+	a.mu.Lock()
+	msgID, ok := a.reactionMsgs[42]
+	a.mu.Unlock()
+
+	if !ok {
+		t.Fatal("expected reactionMsgs entry for chat 42")
+	}
+	if msgID != 77 {
+		t.Errorf("expected message ID 77, got %d", msgID)
+	}
+}
+
+func TestHandleUpdateNoReactionForUnauthorized(t *testing.T) {
+	a, _ := testAdapter(t, map[int64]bool{111: true})
+
+	update := &models.Update{
+		Message: &models.Message{
+			ID:   77,
+			From: &models.User{ID: 999},
+			Chat: models.Chat{ID: 42},
+			Text: "hello",
+		},
+	}
+	a.handleUpdate(context.Background(), nil, update)
+
+	a.mu.Lock()
+	_, ok := a.reactionMsgs[42]
+	a.mu.Unlock()
+
+	if ok {
+		t.Fatal("expected no reactionMsgs entry for unauthorized user")
+	}
+}
+
+func TestCompleteReactionClearsMap(t *testing.T) {
+	a, _ := testAdapter(t, map[int64]bool{111: true})
+
+	a.mu.Lock()
+	a.reactionMsgs[42] = 77
+	a.mu.Unlock()
+
+	a.completeReaction(context.Background(), 42, "\u2705")
+
+	a.mu.Lock()
+	_, ok := a.reactionMsgs[42]
+	a.mu.Unlock()
+
+	if ok {
+		t.Fatal("expected reactionMsgs entry to be cleared after completeReaction")
+	}
+}
+
+func TestCompleteReactionNoOpWhenNoEntry(t *testing.T) {
+	a, _ := testAdapter(t, map[int64]bool{111: true})
+
+	// Should not panic when no entry exists.
+	a.completeReaction(context.Background(), 42, "\u2705")
+
+	a.mu.Lock()
+	_, ok := a.reactionMsgs[42]
+	a.mu.Unlock()
+
+	if ok {
+		t.Fatal("expected no reactionMsgs entry")
+	}
+}
+
+func TestCompleteReactionCrossMarkClearsMap(t *testing.T) {
+	a, _ := testAdapter(t, map[int64]bool{111: true})
+
+	a.mu.Lock()
+	a.reactionMsgs[42] = 77
+	a.mu.Unlock()
+
+	a.completeReaction(context.Background(), 42, "\u274c")
+
+	a.mu.Lock()
+	_, ok := a.reactionMsgs[42]
+	a.mu.Unlock()
+
+	if ok {
+		t.Fatal("expected reactionMsgs entry to be cleared after cross-mark completeReaction")
 	}
 }
 
