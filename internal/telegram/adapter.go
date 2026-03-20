@@ -311,6 +311,8 @@ func documentErrorMessage(err error) string {
 }
 
 func (a *Adapter) sendError(ctx context.Context, chatID int64, text string) {
+	a.completeReaction(ctx, chatID, "\u274c")
+
 	_, err := a.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
 		Text:   text,
@@ -402,6 +404,7 @@ func (a *Adapter) dispatchStream(ctx context.Context) {
 
 			// Error case: empty text + done means delete in-progress message.
 			if update.Text == "" && update.Done {
+				a.completeReaction(ctx, update.ChatID, "\u274c")
 				if exists {
 					_, err := a.bot.DeleteMessage(ctx, &bot.DeleteMessageParams{
 						ChatID:    update.ChatID,
