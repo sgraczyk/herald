@@ -12,6 +12,7 @@ import (
 	"github.com/sgraczyk/herald/internal/hub"
 	"github.com/sgraczyk/herald/internal/provider"
 	"github.com/sgraczyk/herald/internal/store"
+	"github.com/sgraczyk/herald/internal/tool"
 )
 
 // mockProvider implements provider.LLMProvider for testing.
@@ -340,7 +341,7 @@ func TestBuildMessagesWithMemories(t *testing.T) {
 		{Fact: "prefers Go", Source: "explicit"},
 	}
 
-	msgs := buildMessages(history, memories, "hello", "", "", false)
+	msgs := buildMessages(history, memories, "hello", "", "", "")
 
 	if len(msgs) != 3 {
 		t.Fatalf("expected 3 messages, got %d", len(msgs))
@@ -406,7 +407,7 @@ func TestSelectMemoriesUnderLimit(t *testing.T) {
 
 func TestBuildMessagesWithCustomPrompt(t *testing.T) {
 	custom := "You are a pirate assistant."
-	msgs := buildMessages(nil, nil, "hello", custom, "", false)
+	msgs := buildMessages(nil, nil, "hello", custom, "", "")
 
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(msgs))
@@ -417,7 +418,7 @@ func TestBuildMessagesWithCustomPrompt(t *testing.T) {
 }
 
 func TestBuildMessagesWithoutMemories(t *testing.T) {
-	msgs := buildMessages(nil, nil, "hello", "", "", false)
+	msgs := buildMessages(nil, nil, "hello", "", "", "")
 
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(msgs))
@@ -784,7 +785,7 @@ func TestSummaryInContext(t *testing.T) {
 }
 
 func TestBuildMessagesWithSummary(t *testing.T) {
-	msgs := buildMessages(nil, nil, "hello", "", "User likes Go.", false)
+	msgs := buildMessages(nil, nil, "hello", "", "User likes Go.", "")
 
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(msgs))
@@ -1091,73 +1092,16 @@ func TestConversationsClearCommand(t *testing.T) {
 	}
 }
 
-func TestParseImageToolCall(t *testing.T) {
-	tests := []struct {
-		name      string
-		response  string
-		wantOK    bool
-		wantPrompt string
-	}{
-		{
-			name: "valid tool call",
-			response: `<tool_use>
-<name>generate_image</name>
-<parameters>
-<prompt>a cute orange cat sitting on a windowsill</prompt>
-</parameters>
-</tool_use>`,
-			wantOK:     true,
-			wantPrompt: "a cute orange cat sitting on a windowsill",
-		},
-		{
-			name:     "no tool call",
-			response: "Here is a description of a cat.",
-			wantOK:   false,
-		},
-		{
-			name: "different tool name",
-			response: `<tool_use>
-<name>other_tool</name>
-<parameters>
-<prompt>something</prompt>
-</parameters>
-</tool_use>`,
-			wantOK: false,
-		},
-		{
-			name: "empty prompt",
-			response: `<tool_use>
-<name>generate_image</name>
-<parameters>
-<prompt>  </prompt>
-</parameters>
-</tool_use>`,
-			wantOK: false,
-		},
+func TestBuildMessagesWithToolPrompt(t *testing.T) {
+	fragment := "\n\nYou have access to tools..."
+	msgs := buildMessages(nil, nil, "draw a cat", "", "", fragment)
+	if !strings.Contains(msgs[0].Content, "You have access to tools...") {
+		t.Error("expected tool prompt in system prompt when toolPrompt is non-empty")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			prompt, ok := parseImageToolCall(tt.response)
-			if ok != tt.wantOK {
-				t.Errorf("parseImageToolCall() ok = %v, want %v", ok, tt.wantOK)
-			}
-			if ok && prompt != tt.wantPrompt {
-				t.Errorf("parseImageToolCall() prompt = %q, want %q", prompt, tt.wantPrompt)
-			}
-		})
-	}
-}
-
-func TestBuildMessagesWithImageGen(t *testing.T) {
-	msgs := buildMessages(nil, nil, "draw a cat", "", "", true)
-	if !strings.Contains(msgs[0].Content, "generate_image") {
-		t.Error("expected generate_image tool in system prompt when hasImageGen is true")
-	}
-
-	msgs = buildMessages(nil, nil, "draw a cat", "", "", false)
-	if strings.Contains(msgs[0].Content, "generate_image") {
-		t.Error("expected no generate_image tool in system prompt when hasImageGen is false")
+	msgs = buildMessages(nil, nil, "draw a cat", "", "", "")
+	if strings.Contains(msgs[0].Content, "You have access to tools...") {
+		t.Error("expected no tool prompt in system prompt when toolPrompt is empty")
 	}
 }
 
@@ -1182,7 +1126,10 @@ func TestHandleImageGeneration(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	// Provider returns a tool call.
+	reg := tool.NewRegistry()
+	reg.Register(tool.NewImageTool(imgProvider))
+
+	// Provider returns a tool call on first call, then extraction response.
 	toolResponse := `<tool_use>
 <name>generate_image</name>
 <parameters>
@@ -1190,7 +1137,7 @@ func TestHandleImageGeneration(t *testing.T) {
 </parameters>
 </tool_use>`
 	mock := &mockProvider{name: "test", response: toolResponse}
-	l := NewLoop(h, mock, db, 50, 8000, 0, false, false, "", nil, imgProvider, nil)
+	l := NewLoop(h, mock, db, 50, 8000, 0, false, false, "", nil, reg, nil)
 
 	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "draw a cat"})
 
@@ -1223,6 +1170,9 @@ func TestHandleImageGenerationError(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
+	reg := tool.NewRegistry()
+	reg.Register(tool.NewImageTool(imgProvider))
+
 	toolResponse := `<tool_use>
 <name>generate_image</name>
 <parameters>
@@ -1230,7 +1180,7 @@ func TestHandleImageGenerationError(t *testing.T) {
 </parameters>
 </tool_use>`
 	mock := &mockProvider{name: "test", response: toolResponse}
-	l := NewLoop(h, mock, db, 50, 8000, 0, false, false, "", nil, imgProvider, nil)
+	l := NewLoop(h, mock, db, 50, 8000, 0, false, false, "", nil, reg, nil)
 
 	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "draw something"})
 
@@ -1247,7 +1197,7 @@ func TestHandleImageGenerationError(t *testing.T) {
 	}
 }
 
-func TestNoImageProviderSkipsToolCall(t *testing.T) {
+func TestNoToolsSkipsToolCall(t *testing.T) {
 	toolResponse := `<tool_use>
 <name>generate_image</name>
 <parameters>
@@ -1255,12 +1205,12 @@ func TestNoImageProviderSkipsToolCall(t *testing.T) {
 </parameters>
 </tool_use>`
 	mock := &mockProvider{name: "test", response: toolResponse}
-	// No image provider (nil).
+	// No registry (nil) — no tools registered.
 	l, h, _ := testLoop(t, mock)
 
 	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "draw a cat"})
 
-	// Without image provider, tool call is treated as normal text response.
+	// Without tools, tool call XML is treated as normal text response.
 	out := readOut(t, h)
 	if out.Text != toolResponse {
 		t.Errorf("expected raw tool response forwarded, got %q", out.Text)
@@ -1317,6 +1267,9 @@ func TestStreamingImageToolCallDeletesStreamedMessage(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
+	reg := tool.NewRegistry()
+	reg.Register(tool.NewImageTool(imgProvider))
+
 	toolResponse := `<tool_use>
 <name>generate_image</name>
 <parameters>
@@ -1326,7 +1279,7 @@ func TestStreamingImageToolCallDeletesStreamedMessage(t *testing.T) {
 
 	sp := &mockStreamingProvider{mockProvider{name: "test", response: toolResponse}}
 	fb := provider.NewFallback([]provider.LLMProvider{sp}, 1, nil)
-	l := NewLoop(h, fb, db, 50, 8000, 0, false, true, "", nil, imgProvider, nil)
+	l := NewLoop(h, fb, db, 50, 8000, 0, false, true, "", nil, reg, nil)
 
 	// Use a trivial message (< 10 chars) so background memory extraction
 	// does not run and set sp.called via extProvider.Chat().
@@ -1370,5 +1323,78 @@ func TestStreamingImageToolCallDeletesStreamedMessage(t *testing.T) {
 	// Buffered Chat should NOT have been called (streaming succeeded).
 	if sp.called {
 		t.Error("buffered Chat should not be called when streaming succeeds")
+	}
+}
+
+// mockSearchTool implements tool.Tool for testing.
+type mockSearchTool struct {
+	result *tool.Result
+	err    error
+}
+
+func (m *mockSearchTool) Name() string        { return "search" }
+func (m *mockSearchTool) Description() string  { return "Search for information." }
+func (m *mockSearchTool) Parameters() []tool.Parameter {
+	return []tool.Parameter{{Name: "query", Type: "string", Required: true}}
+}
+func (m *mockSearchTool) Execute(_ context.Context, _ map[string]string) (*tool.Result, error) {
+	return m.result, m.err
+}
+
+func TestToolCallCycleTextResult(t *testing.T) {
+	// Provider returns a tool call first, then a text response after receiving result.
+	cap := &capturingProvider{responses: []string{
+		"<tool_use>\n<name>search</name>\n<parameters>\n<query>Go</query>\n</parameters>\n</tool_use>",
+		"Found results about Go.",
+		"[]",
+	}}
+
+	h := hub.New()
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	reg := tool.NewRegistry()
+	reg.Register(&mockSearchTool{result: &tool.Result{Text: "Go is a programming language."}})
+
+	l := NewLoop(h, cap, db, 50, 8000, 0, false, false, "", nil, reg, nil)
+	l.extProvider = cap
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "search for Go info"})
+	out := readOut(t, h)
+	l.Wait()
+
+	if out.Text != "Found results about Go." {
+		t.Errorf("expected final response, got %q", out.Text)
+	}
+}
+
+func TestToolCallMaxLimit(t *testing.T) {
+	toolResponse := "<tool_use>\n<name>search</name>\n<parameters>\n<query>Go</query>\n</parameters>\n</tool_use>"
+	sp := &sequentialProvider{
+		responses: []string{toolResponse, toolResponse, toolResponse, "Final answer after limit.", "[]"},
+	}
+
+	h := hub.New()
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	reg := tool.NewRegistry()
+	reg.Register(&mockSearchTool{result: &tool.Result{Text: "result"}})
+
+	l := NewLoop(h, sp, db, 50, 8000, 0, false, false, "", nil, reg, nil)
+	l.extProvider = sp
+
+	l.handle(context.Background(), hub.InMessage{ChatID: 1, Text: "search repeatedly please"})
+	out := readOut(t, h)
+	l.Wait()
+
+	if out.Text != "Final answer after limit." {
+		t.Errorf("expected final answer after limit, got %q", out.Text)
 	}
 }

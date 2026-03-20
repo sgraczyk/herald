@@ -21,6 +21,7 @@ import (
 	"github.com/sgraczyk/herald/internal/provider"
 	"github.com/sgraczyk/herald/internal/store"
 	"github.com/sgraczyk/herald/internal/telegram"
+	"github.com/sgraczyk/herald/internal/tool"
 )
 
 var version = "dev"
@@ -141,8 +142,15 @@ func serve(configPath string) error {
 	// Create hub.
 	h := hub.New()
 
+	// Create tool registry and register image generation if available.
+	var registry *tool.Registry
+	if imgProvider != nil {
+		registry = tool.NewRegistry()
+		registry.Register(tool.NewImageTool(imgProvider))
+	}
+
 	// Create agent loop.
-	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.HistoryTokenBudget, *cfg.MaxArchivedConversations, cfg.Summarize, cfg.Streaming, cfg.SystemPrompt, m, imgProvider, cfg.StatusMessages)
+	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.HistoryTokenBudget, *cfg.MaxArchivedConversations, cfg.Summarize, cfg.Streaming, cfg.SystemPrompt, m, registry, cfg.StatusMessages)
 
 	// Create Telegram adapter.
 	tg, err := telegram.New(cfg.Telegram.Token, h, cfg.AllowedUserIDs, document.NewPDFExtractor(cfg.MaxDocumentTokens))
