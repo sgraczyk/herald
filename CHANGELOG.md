@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/sgraczyk/herald/compare/v0.7.1...v0.7.2) (2026-03-20)
+
+
+### Bug Fixes
+
+* **telegram:** use Telegram-allowed emoji for message reactions ([#170](https://github.com/sgraczyk/herald/issues/170)) ([6efe275](https://github.com/sgraczyk/herald/commit/6efe275a2e315171ff2f3ec39737c5dec0578848))
+
 ## [0.7.1](https://github.com/sgraczyk/herald/compare/v0.7.0...v0.7.1) (2026-03-20)
 
 
