@@ -670,8 +670,9 @@ const (
 	// before forcing a final text response from the LLM.
 	maxToolCalls = 3
 
-	// toolCallTimeout is the per-tool execution timeout.
-	toolCallTimeout = 10 * time.Second
+	// toolCallTimeout is the per-tool execution timeout. Set above the
+	// image provider's 60-second HTTP timeout to avoid premature cancellation.
+	toolCallTimeout = 90 * time.Second
 )
 
 // executeToolCalls runs the tool call loop. If initialResponse is non-empty, it
