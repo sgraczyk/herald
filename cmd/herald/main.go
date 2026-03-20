@@ -104,14 +104,10 @@ func serve(configPath string) error {
 	}
 	provider.ValidateProviders(context.Background(), providers)
 
-	// Create metrics.
 	providerNames := make([]string, len(providers))
 	for i, p := range providers {
 		providerNames[i] = p.Name()
 	}
-	m := metrics.New(providerNames, nil)
-
-	chain := provider.NewFallback(providers, *cfg.MaxRetries, m)
 
 	// Build image providers.
 	var imgProviders []provider.ImageProvider
@@ -142,12 +138,25 @@ func serve(configPath string) error {
 	// Create hub.
 	h := hub.New()
 
-	// Create tool registry and register image generation if available.
-	var registry *tool.Registry
+	// Build tool registry.
+	registry := tool.NewRegistry()
 	if imgProvider != nil {
-		registry = tool.NewRegistry()
-		registry.Register(tool.NewImageTool(imgProvider))
+		if err := registry.Register(tool.NewImageTool(imgProvider)); err != nil {
+			return fmt.Errorf("register image tool: %w", err)
+		}
 	}
+	for _, t := range registry.All() {
+		slog.Info("tool registered", slog.String("name", t.Name()))
+	}
+
+	// Create metrics with provider and tool names.
+	toolNames := make([]string, 0)
+	for _, t := range registry.All() {
+		toolNames = append(toolNames, t.Name())
+	}
+	m := metrics.New(providerNames, toolNames)
+
+	chain := provider.NewFallback(providers, *cfg.MaxRetries, m)
 
 	// Create agent loop.
 	loop := agent.NewLoop(h, chain, db, cfg.HistoryLimit, cfg.HistoryTokenBudget, *cfg.MaxArchivedConversations, cfg.Summarize, cfg.Streaming, cfg.SystemPrompt, m, registry, cfg.StatusMessages)
