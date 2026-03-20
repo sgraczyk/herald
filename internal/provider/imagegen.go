@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -102,6 +104,62 @@ func (c *Chutes) Generate(ctx context.Context, prompt string) ([]byte, error) {
 	}
 
 	return imgBytes, nil
+}
+
+// ImageFallback tries image providers in order and returns the first success.
+// It always returns the first provider's name since it does not track which
+// provider last succeeded (unlike LLM Fallback which is stateful).
+type ImageFallback struct {
+	providers []ImageProvider
+}
+
+// NewImageFallback creates an image provider fallback chain.
+func NewImageFallback(providers []ImageProvider) *ImageFallback {
+	return &ImageFallback{providers: providers}
+}
+
+// Name returns the first provider's name.
+func (f *ImageFallback) Name() string {
+	if len(f.providers) == 0 {
+		return ""
+	}
+	return f.providers[0].Name()
+}
+
+// Generate tries each provider in order, returning the first successful result.
+func (f *ImageFallback) Generate(ctx context.Context, prompt string) ([]byte, error) {
+	var errs []string
+	var hasAuthErr, hasTimeout bool
+
+	for _, p := range f.providers {
+		result, err := p.Generate(ctx, prompt)
+		if err == nil {
+			return result, nil
+		}
+
+		slog.Warn("image provider failed, trying next",
+			slog.String("provider", p.Name()),
+			slog.String("error", err.Error()),
+		)
+
+		if errors.Is(err, ErrAuthFailure) {
+			hasAuthErr = true
+		}
+		if errors.Is(err, ErrTimeout) {
+			hasTimeout = true
+		}
+		errs = append(errs, fmt.Sprintf("%s: %v", p.Name(), err))
+	}
+
+	combined := fmt.Errorf("all image providers failed: %s", strings.Join(errs, "; "))
+	switch {
+	case hasAuthErr:
+		return nil, fmt.Errorf("%w: %w", combined, ErrAuthFailure)
+	case hasTimeout:
+		return nil, fmt.Errorf("%w: %w", combined, ErrTimeout)
+	default:
+		return nil, combined
+	}
 }
 
 type chutesRequest struct {

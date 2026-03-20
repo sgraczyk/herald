@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -107,5 +109,124 @@ func TestChutes_GenerateEmptyBody(t *testing.T) {
 	_, err := c.Generate(context.Background(), "a cat")
 	if err == nil {
 		t.Fatal("expected error for empty response body")
+	}
+}
+
+// stubImageProvider is a minimal ImageProvider for fallback testing.
+type stubImageProvider struct {
+	name string
+	data []byte
+	err  error
+}
+
+func (s *stubImageProvider) Name() string { return s.name }
+func (s *stubImageProvider) Generate(_ context.Context, _ string) ([]byte, error) {
+	return s.data, s.err
+}
+
+func TestImageFallback_FirstSucceeds(t *testing.T) {
+	p1 := &stubImageProvider{name: "p1", data: []byte("img1")}
+	p2 := &stubImageProvider{name: "p2", data: []byte("img2")}
+	fb := NewImageFallback([]ImageProvider{p1, p2})
+
+	result, err := fb.Generate(context.Background(), "cat")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(result) != "img1" {
+		t.Errorf("expected img1, got %q", result)
+	}
+}
+
+func TestImageFallback_FirstFailsSecondSucceeds(t *testing.T) {
+	p1 := &stubImageProvider{name: "p1", err: fmt.Errorf("p1 down")}
+	p2 := &stubImageProvider{name: "p2", data: []byte("img2")}
+	fb := NewImageFallback([]ImageProvider{p1, p2})
+
+	result, err := fb.Generate(context.Background(), "cat")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(result) != "img2" {
+		t.Errorf("expected img2, got %q", result)
+	}
+}
+
+func TestImageFallback_AllFail(t *testing.T) {
+	p1 := &stubImageProvider{name: "p1", err: fmt.Errorf("p1 down")}
+	p2 := &stubImageProvider{name: "p2", err: fmt.Errorf("p2 down")}
+	fb := NewImageFallback([]ImageProvider{p1, p2})
+
+	_, err := fb.Generate(context.Background(), "cat")
+	if err == nil {
+		t.Fatal("expected error when all providers fail")
+	}
+	if !strings.Contains(err.Error(), "p1") || !strings.Contains(err.Error(), "p2") {
+		t.Errorf("expected combined error with both provider names, got: %v", err)
+	}
+}
+
+func TestImageFallback_PreservesAuthSentinel(t *testing.T) {
+	p1 := &stubImageProvider{name: "p1", err: fmt.Errorf("auth: %w", ErrAuthFailure)}
+	p2 := &stubImageProvider{name: "p2", err: fmt.Errorf("p2 down")}
+	fb := NewImageFallback([]ImageProvider{p1, p2})
+
+	_, err := fb.Generate(context.Background(), "cat")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ErrAuthFailure) {
+		t.Errorf("expected ErrAuthFailure sentinel, got: %v", err)
+	}
+}
+
+func TestImageFallback_PreservesTimeoutSentinel(t *testing.T) {
+	p1 := &stubImageProvider{name: "p1", err: fmt.Errorf("slow: %w", ErrTimeout)}
+	p2 := &stubImageProvider{name: "p2", err: fmt.Errorf("p2 down")}
+	fb := NewImageFallback([]ImageProvider{p1, p2})
+
+	_, err := fb.Generate(context.Background(), "cat")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ErrTimeout) {
+		t.Errorf("expected ErrTimeout sentinel, got: %v", err)
+	}
+}
+
+func TestImageFallback_SingleProvider(t *testing.T) {
+	p1 := &stubImageProvider{name: "p1", data: []byte("img1")}
+	fb := NewImageFallback([]ImageProvider{p1})
+
+	result, err := fb.Generate(context.Background(), "cat")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(result) != "img1" {
+		t.Errorf("expected img1, got %q", result)
+	}
+}
+
+func TestImageFallback_AuthFailureFallsThrough(t *testing.T) {
+	p1 := &stubImageProvider{name: "p1", err: fmt.Errorf("auth: %w", ErrAuthFailure)}
+	p2 := &stubImageProvider{name: "p2", data: []byte("img2")}
+	fb := NewImageFallback([]ImageProvider{p1, p2})
+
+	result, err := fb.Generate(context.Background(), "cat")
+	if err != nil {
+		t.Fatalf("expected fallback to succeed after auth failure, got: %v", err)
+	}
+	if string(result) != "img2" {
+		t.Errorf("expected img2, got %q", result)
+	}
+}
+
+func TestImageFallback_Name(t *testing.T) {
+	p1 := &stubImageProvider{name: "z-image"}
+	p2 := &stubImageProvider{name: "flux"}
+	fb := NewImageFallback([]ImageProvider{p1, p2})
+
+	if fb.Name() != "z-image" {
+		t.Errorf("expected name 'z-image', got %q", fb.Name())
 	}
 }
