@@ -88,7 +88,7 @@ internal/
     openai.go                # OpenAI-compatible HTTP client (Chutes.ai, Groq, etc.)
     fallback.go              # Try providers in order, return first success
     image.go                 # Image/photo handling for LLM providers
-    imagegen.go              # ImageProvider interface + DALL-E 3 implementation
+    imagegen.go              # ImageProvider interface + Chutes.ai implementation
     validate.go              # Provider configuration validation
   store/
     db.go                    # bbolt init (go.etcd.io/bbolt, pure Go)
