@@ -17,7 +17,8 @@
   ],
   "image_provider": {
     "type": "none",
-    "api_key_env": "OPENAI_API_KEY"
+    "base_url": "https://chutes.ai/app/chute/a292d47b-8f0f-5662-b2b0-6f0ebba48031",
+    "api_key_env": "CHUTES_API_KEY"
   },
   "store": {
     "path": "herald.db"
