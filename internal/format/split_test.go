@@ -218,3 +218,57 @@ func TestSplit_MultipleChunks(t *testing.T) {
 		}
 	}
 }
+
+func TestSplit_InsidePreUsesNewline(t *testing.T) {
+	// Code block that must be split — should split at a \n inside the block.
+	line := strings.Repeat("x", 40) + "\n"
+	code := "<pre>" + strings.Repeat(line, 5) + "</pre>"
+	got := Split(code, 120)
+	if len(got) < 2 {
+		t.Fatalf("expected multiple chunks, got %d", len(got))
+	}
+	// Each chunk should end at a line boundary (before closing tags)
+	for i, chunk := range got {
+		if len(chunk) > 120 {
+			t.Errorf("chunk %d exceeds maxLen: len=%d", i, len(chunk))
+		}
+	}
+}
+
+func TestSplit_MixedContentBlockBoundary(t *testing.T) {
+	// paragraph + code block — should split at the \n\n between them
+	para := strings.Repeat("word ", 8) // 40 chars
+	code := "<pre><code>" + strings.Repeat("c", 30) + "</code></pre>"
+	s := para + "\n\n" + code
+	got := Split(s, 55)
+	if len(got) < 2 {
+		t.Fatalf("expected multiple chunks, got %d", len(got))
+	}
+	// First chunk should be the paragraph text ending at \n\n
+	if !strings.HasSuffix(got[0], "\n\n") {
+		t.Errorf("first chunk should end at paragraph break, got: %q", got[0])
+	}
+	// Second chunk should start with the code block
+	if !strings.HasPrefix(got[1], "<pre>") {
+		t.Errorf("second chunk should start with <pre>, got: %q", got[1])
+	}
+}
+
+func TestSplit_LargePreBlockNewlineBoundary(t *testing.T) {
+	// Single code block that exceeds maxLen — must split inside at \n boundaries
+	line := "func example() { return nil }\n" // 30 chars per line
+	code := "<pre><code>" + strings.Repeat(line, 10) + "</code></pre>"
+	got := Split(code, 120)
+	if len(got) < 2 {
+		t.Fatalf("expected multiple chunks, got %d", len(got))
+	}
+	for i, chunk := range got {
+		if len(chunk) > 120 {
+			t.Errorf("chunk %d exceeds maxLen: len=%d", i, len(chunk))
+		}
+		// All chunks should have pre+code tags (repaired)
+		if !strings.Contains(chunk, "<pre>") {
+			t.Errorf("chunk %d missing <pre> tag", i)
+		}
+	}
+}
