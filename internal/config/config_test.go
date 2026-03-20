@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -355,5 +356,215 @@ func TestLoad_StatusMessages_AllCustom(t *testing.T) {
 		sm.ImageGenericErr != "d" || sm.ImageTooLarge != "e" || sm.ProvTimeout != "f" ||
 		sm.ProvAuthError != "g" || sm.ProvGenericErr != "h" {
 		t.Errorf("unexpected status messages: %+v", sm)
+	}
+}
+
+func TestValidate_FullConfig(t *testing.T) {
+	t.Setenv("TEST_TG_TOKEN", "tok123")
+	t.Setenv("TEST_API_KEY", "key456")
+	t.Setenv("TEST_ALLOWED_IDS", "111,222")
+
+	fullWithImages := `{
+		"telegram": {"token_env": "TEST_TG_TOKEN"},
+		"providers": [
+			{"name": "test-claude", "type": "claude-cli"},
+			{"name": "test-openai", "type": "openai", "base_url": "https://api.example.com", "model": "gpt-4", "api_key_env": "TEST_API_KEY"}
+		],
+		"image_providers": [
+			{"name": "test-img", "type": "chutes", "base_url": "https://img.example.com", "api_key_env": "TEST_API_KEY"}
+		],
+		"store": {"path": "/tmp/test.db"},
+		"history_limit": 30,
+		"history_token_budget": 4000,
+		"max_document_tokens": 2000,
+		"max_retries": 2,
+		"max_archived_conversations": 100,
+		"log_level": "debug",
+		"allowed_user_ids_env": "TEST_ALLOWED_IDS"
+	}`
+
+	cfg, err := Load(writeConfig(t, fullWithImages))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	result := cfg.Validate()
+	if len(result.Warnings) != 0 {
+		t.Errorf("Warnings = %v, want empty", result.Warnings)
+	}
+	if len(result.Defaults) != 0 {
+		t.Errorf("Defaults = %v, want empty", result.Defaults)
+	}
+}
+
+func TestValidate_MinimalConfig(t *testing.T) {
+	t.Setenv("TEST_TG_TOKEN", "tok123")
+	t.Setenv("TEST_ALLOWED_IDS", "111")
+
+	cfg, err := Load(writeConfig(t, `{
+		"telegram": {"token_env": "TEST_TG_TOKEN"},
+		"providers": [{"name": "c", "type": "claude-cli"}],
+		"allowed_user_ids_env": "TEST_ALLOWED_IDS"
+	}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	result := cfg.Validate()
+
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "image_providers") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about image_providers, got: %v", result.Warnings)
+	}
+
+	if len(result.Defaults) != 6 {
+		t.Errorf("len(Defaults) = %d, want 6; got: %v", len(result.Defaults), result.Defaults)
+	}
+}
+
+func TestValidate_EmptyProviders(t *testing.T) {
+	t.Setenv("TEST_TG_TOKEN", "tok123")
+
+	cfg, err := Load(writeConfig(t, `{
+		"telegram": {"token_env": "TEST_TG_TOKEN"},
+		"providers": []
+	}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	result := cfg.Validate()
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "no providers configured") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about empty providers, got: %v", result.Warnings)
+	}
+}
+
+func TestValidate_EmptyImageProviders(t *testing.T) {
+	t.Setenv("TEST_TG_TOKEN", "tok123")
+	t.Setenv("TEST_ALLOWED_IDS", "111")
+
+	cfg, err := Load(writeConfig(t, `{
+		"telegram": {"token_env": "TEST_TG_TOKEN"},
+		"providers": [{"name": "c", "type": "claude-cli"}],
+		"image_providers": [],
+		"allowed_user_ids_env": "TEST_ALLOWED_IDS"
+	}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	result := cfg.Validate()
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "image generation will be unavailable") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about image_providers, got: %v", result.Warnings)
+	}
+}
+
+func TestValidate_EmptyTelegramToken(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `{
+		"telegram": {"token_env": "UNSET_TOKEN_VAR"},
+		"providers": [{"name": "c", "type": "claude-cli"}]
+	}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	result := cfg.Validate()
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "telegram token not set") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about telegram token, got: %v", result.Warnings)
+	}
+}
+
+func TestValidate_OpenAIProviderMissingKey(t *testing.T) {
+	t.Setenv("TEST_TG_TOKEN", "tok123")
+
+	cfg, err := Load(writeConfig(t, `{
+		"telegram": {"token_env": "TEST_TG_TOKEN"},
+		"providers": [
+			{"name": "no-key", "type": "openai", "base_url": "https://api.example.com", "api_key_env": "MISSING_KEY_VAR"}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	result := cfg.Validate()
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "no-key") && strings.Contains(w, "API key not set") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about missing API key, got: %v", result.Warnings)
+	}
+}
+
+func TestValidate_AllowedUserIDsNotConfigured(t *testing.T) {
+	t.Setenv("TEST_TG_TOKEN", "tok123")
+
+	cfg, err := Load(writeConfig(t, `{
+		"telegram": {"token_env": "TEST_TG_TOKEN"},
+		"providers": [{"name": "c", "type": "claude-cli"}]
+	}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	result := cfg.Validate()
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "allowed_user_ids_env not configured") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about missing allowed_user_ids_env, got: %v", result.Warnings)
+	}
+}
+
+func TestValidate_AllowedUserIDsEmptyEnv(t *testing.T) {
+	t.Setenv("TEST_TG_TOKEN", "tok123")
+	t.Setenv("EMPTY_IDS", "")
+
+	cfg, err := Load(writeConfig(t, `{
+		"telegram": {"token_env": "TEST_TG_TOKEN"},
+		"providers": [{"name": "c", "type": "claude-cli"}],
+		"allowed_user_ids_env": "EMPTY_IDS"
+	}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	result := cfg.Validate()
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "EMPTY_IDS") && strings.Contains(w, "empty") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about empty allowed user IDs env var, got: %v", result.Warnings)
 	}
 }
