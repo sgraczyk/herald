@@ -6,7 +6,7 @@ require (
 	github.com/go-telegram/bot v1.19.0
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/spf13/cobra v1.10.2
-	github.com/yuin/goldmark v1.7.16
+	github.com/yuin/goldmark v1.7.17
 	go.etcd.io/bbolt v1.4.3
 	golang.org/x/image v0.36.0
 )
