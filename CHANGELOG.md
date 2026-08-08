@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.0](https://github.com/sgraczyk/herald/compare/v0.7.2...v0.8.0) (2026-03-20)
+
+
+### Features
+
+* **config:** add configurable status message templates ([#172](https://github.com/sgraczyk/herald/issues/172)) ([16ecec3](https://github.com/sgraczyk/herald/commit/16ecec35dac9af020211aff9006e1b2fae448969))
+* **config:** startup config validation and validate-config command ([#176](https://github.com/sgraczyk/herald/issues/176)) ([142d6c1](https://github.com/sgraczyk/herald/commit/142d6c1ee98f6484b2d8e1cecfb0ba96b5ad220d))
+* **tool:** extensible tool framework with provider integration ([#174](https://github.com/sgraczyk/herald/issues/174)) ([b2d9dee](https://github.com/sgraczyk/herald/commit/b2d9dee0d396ef9000589a29b00e4e1ee3d3ecba))
+
 ## [0.7.2](https://github.com/sgraczyk/herald/compare/v0.7.1...v0.7.2) (2026-03-20)
 
 
